@@ -44,10 +44,10 @@ namespace WPEFramework {
 
             ASSERT ((nullptr == FirmwareUpdateImpl_instance) || (nullptr == FirmwareUpdateImpl));
 
-            if (FirmwareUpdateImpl != nullptr)
-            {
+           // if (FirmwareUpdateImpl != nullptr)
+          //  {
                 FirmwareUpdateImpl_instance = FirmwareUpdateImpl;
-            }
+           // }
 
             return(FirmwareUpdateImpl_instance);
         }
