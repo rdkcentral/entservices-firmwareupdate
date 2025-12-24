@@ -126,18 +126,18 @@ jobs:
           ref: develop
           token: ${{ secrets.RDKCM_RDKE }}
 
-      - name: Checkout entservices-softwareupdate
+      - name: Checkout entservices-firmwareupdate
         if: ${{ inputs.caller_source == 'local' }}
         uses: actions/checkout@v3
         with:
-          path: entservices-softwareupdate
+          path: entservices-firmwareupdate
 
-      - name: Checkout entservices-softwareupdate-testframework
+      - name: Checkout entservices-firmwareupdate-testframework
         if: ${{ inputs.caller_source == 'testframework' }}
         uses: actions/checkout@v3
         with:
-          repository: rdkcentral/entservices-softwareupdate
-          path: entservices-softwareupdate
+          repository: rdkcentral/entservices-firmwareupdate
+          path: entservices-firmwareupdate
           ref: develop
 
       - name: Checkout googletest
@@ -358,7 +358,7 @@ jobs:
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/ccec/drivers
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/network
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests
-          -I $GITHUB_WORKSPACE/entservices-softwareupdate/helpers
+          -I $GITHUB_WORKSPACE/entservices-firmwareupdate/helpers
           -I $GITHUB_WORKSPACE/Thunder/Source
           -I $GITHUB_WORKSPACE/Thunder/Source/core
           -I $GITHUB_WORKSPACE/install/usr/include
@@ -394,11 +394,11 @@ jobs:
           &&
           cmake --install build/mocks
 
-      - name: Build entservices-softwareupdate
+      - name: Build entservices-firmwareupdate
         run: >
           cmake -G Ninja
-          -S "$GITHUB_WORKSPACE/entservices-softwareupdate"
-          -B build/entservices-softwareupdate
+          -S "$GITHUB_WORKSPACE/entservices-firmwareupdate"
+          -B build/entservices-firmwareupdate
           -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr"
           -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake"
           -DCMAKE_CXX_FLAGS="
@@ -465,12 +465,10 @@ jobs:
           -DUSE_THUNDER_R4=ON
           -DHIDE_NON_EXTERNAL_SYMBOLS=OFF
           -DPLUGIN_FIRMWAREUPDATE=ON
-          -DPLUGIN_MAINTENANCEMANAGER=ON
-          -DPLUGIN_PACKAGER=ON
           &&
-          cmake --build build/entservices-softwareupdate -j8
+          cmake --build build/entservices-firmwareupdate -j8
           &&
-          cmake --install build/entservices-softwareupdate
+          cmake --install build/entservices-firmwareupdate
 
       - name: Build entservices-testframework
         run: >
@@ -536,7 +534,7 @@ jobs:
           -DCMAKE_DISABLE_FIND_PACKAGE_RFC=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RBus=ON
           -DCMAKE_BUILD_TYPE=Debug
-          -DPLUGIN_PACKAGER=ON
+          -DPLUGIN_FIRMWAREUPDATE=ON
           -DDS_FOUND=ON
           -DRDK_SERVICES_L1_TEST=ON
           -DUSE_THUNDER_R4=ON
@@ -665,12 +663,12 @@ jobs:
           &&
           lcov -c
           -o coverage.info
-          -d build/entservices-softwareupdate
+          -d build/entservices-firmwareupdate
           &&
           lcov
           -r coverage.info
           '/usr/include/*'
-          '*/build/entservices-softwareupdate/_deps/*'
+          '*/build/entservices-firmwareupdate/_deps/*'
           '*/install/usr/include/*'
           '*/Tests/headers/*'
           '*/Tests/mocks/*'
@@ -680,18 +678,16 @@ jobs:
           &&
           genhtml
           -o coverage
-          -t "entservices-softwareupdate coverage"
+          -t "entservices-firmwareupdate coverage"
           filtered_coverage.info
           &&
-          lcov --extract filtered_coverage.info "*/Packager/Packager*" -o Packager_coverage.info
-          &&
-          lcov --extract filtered_coverage.info "*/MaintenanceManager/MaintenanceManager.cpp" -o maintenancemanager_coverage.info
+          lcov --extract filtered_coverage.info "*/FirmwareUpdate/FirmwareUpdate*" -o FirmwareUpdate_coverage.info
          
       - name: Upload artifacts
         if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
-          name: artifacts-L1-softwareupdate
+          name: artifacts-L1-firmwareupdate
           path: |
             coverage/
             valgrind_log

@@ -101,18 +101,10 @@ macro(add_plugin_test plugin_name test_files)
     add_plugin_test_ex(${plugin_opt} "${test_files}" "../../${plugin_name}" "${NAMESPACE}${plugin_name}")
 endmacro()
 
-# PLUGIN_PACKAGER
-set (PACKAGER_INC ${CMAKE_SOURCE_DIR}/../entservices-softwareupdate/Packager ${CMAKE_SOURCE_DIR}/../entservices-softwareupdate/helpers)
-add_plugin_test_ex(PLUGIN_PACKAGER tests/test_Packager.cpp "${PACKAGER_INC}" "${NAMESPACE}Packager")
-
 # PLUGIN_FIRMWAREUPDATE
 set (FIRMWAREUPDATE_LIBS ${NAMESPACE}FirmwareUpdate ${NAMESPACE}FirmwareUpdateImplementation)
-set (FIRMWAREUPDATE_INC ${CMAKE_SOURCE_DIR}/../entservices-softwareupdate/FirmwareUpdate ${CMAKE_SOURCE_DIR}/../entservices-softwareupdate/helpers)
+set (FIRMWAREUPDATE_INC ${CMAKE_SOURCE_DIR}/../entservices-firmwareupdate/FirmwareUpdate ${CMAKE_SOURCE_DIR}/../entservices-firmwareupdate/helpers)
 add_plugin_test_ex(PLUGIN_FIRMWAREUPDATE tests/test_FirmwareUpdate.cpp "${FIRMWAREUPDATE_INC}" "${FIRMWAREUPDATE_LIBS}")
-
-# PLUGIN_MAINTENANCEMANAGER
-set (MAINTENANCEMANAGER_INC ${CMAKE_SOURCE_DIR}/../entservices-softwareupdate/MaintenanceManager ${CMAKE_SOURCE_DIR}/../entservices-softwareupdate/helpers)
-add_plugin_test_ex(PLUGIN_MAINTENANCEMANAGER tests/test_MaintenanceManager.cpp "${MAINTENANCEMANAGER_INC}" "${NAMESPACE}MaintenanceManager")
 
 add_library(${MODULE_NAME} SHARED ${TEST_SRC})
 
