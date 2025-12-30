@@ -1,7 +1,7 @@
 # If not stated otherwise in this file or this component's license file the
 # following copyright and licenses apply:
 #
-# Copyright 2021 RDK Management
+# Copyright 2020 RDK Management
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,13 +27,12 @@ find_package(PkgConfig)
 
 find_library(IARMBUS_LIBRARIES NAMES IARMBus)
 find_path(IARMBUS_INCLUDE_DIRS NAMES libIARM.h PATH_SUFFIXES rdk/iarmbus)
+find_path(IARMRECEIVER_INCLUDE_DIRS NAMES receiverMgr.h PATH_SUFFIXES rdk/iarmmgrs/receiver)
 find_path(IARMSYS_INCLUDE_DIRS NAMES sysMgr.h PATH_SUFFIXES rdk/iarmmgrs/sysmgr)
-find_path(IARMMAINTEN_INCLUDE_DIRS NAMES maintenanceMGR.h PATH_SUFFIXES rdk/iarmmgrs-hal)
-
 
 set(IARMBUS_LIBRARIES ${IARMBUS_LIBRARIES} CACHE PATH "Path to IARMBus library")
-set(IARMBUS_INCLUDE_DIRS ${IARMBUS_INCLUDE_DIRS} ${IARMSYS_INCLUDE_DIRS} ${IARMMAINTEN_INCLUDE_DIRS})
-set(IARMBUS_INCLUDE_DIRS ${IARMBUS_INCLUDE_DIRS} ${IARMSYS_INCLUDE_DIRS} ${IARMMAINTEN_INCLUDE_DIRS} CACHE PATH "Path to IARMBus include")
+set(IARMBUS_INCLUDE_DIRS ${IARMBUS_INCLUDE_DIRS} ${IARMRECEIVER_INCLUDE_DIRS} ${IARMSYS_INCLUDE_DIRS})
+set(IARMBUS_INCLUDE_DIRS ${IARMBUS_INCLUDE_DIRS} ${IARMRECEIVER_INCLUDE_DIRS} ${IARMSYS_INCLUDE_DIRS} CACHE PATH "Path to IARMBus include")
 
 include(FindPackageHandleStandardArgs)
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(IARMBUS DEFAULT_MSG IARMBUS_INCLUDE_DIRS IARMBUS_LIBRARIES)
