@@ -18,9 +18,6 @@
 #
 # features
 #
-
-add_definitions (-DUSE_SOUND_PLAYER)
-
 add_definitions (-DUSE_IARM)
 option(USE_IARM "USE_IARM" ON)
 
@@ -56,25 +53,6 @@ option(PLUGIN_CONTINUEWATCHING "PLUGIN_CONTINUEWATCHING" ON)
 #add_definitions (-DHAS_API_TTSSETTINGSSERVICE)
 #add_definitions (-DHAS_API_TTSSESSIONSERVICE)
 #add_definitions (-DHAS_API_TTSRESOURCESERVICE)
-add_definitions (-DPLUGIN_CONTINUEWATCHING)
-option(PLUGIN_CONTINUEWATCHING "PLUGIN_CONTINUEWATCHING" ON)
-
-if(PLUGIN_CONTINUEWATCHING)
-    if(CONTINUEWATCHING_DISABLE_SECAPI)
-        add_definitions (-DDISABLE_SECAPI)
-    endif()
-endif()
-
-
-if(PLUGIN_CONTINUEWATCHING)
-    if(CONTINUEWATCHING_DISABLE_SECAPI)
-        add_definitions (-DDISABLE_SECAPI)
-    endif()
-endif()
-
-if (DISABLE_GEOGRAPHY_TIMEZONE)
-    add_definitions (-DDISABLE_GEOGRAPHY_TIMEZONE)
-endif()
 
 if (BUILD_ENABLE_SYSTIMEMGR_SUPPORT)
     message("Building with SYSTIMEMGR_SUPPORT enabled")
@@ -90,28 +68,9 @@ if (BUILD_DBUS)
     option(IARM_USE_DBUS "IARM_USE_DBUS" ON)
 endif()
 
-if (BUILD_ENABLE_THERMAL_PROTECTION)
-    add_definitions (-DBUILD_ENABLE_THERMAL_PROTECTION)
-    add_definitions (-DENABLE_THERMAL_PROTECTION)
-endif()
-
 if (BUILD_ENABLE_CLOCK)
     message("Building with clock support")
     add_definitions (-DCLOCK_BRIGHTNESS_ENABLED)
-endif()
-
-if (BUILD_ENABLE_EXTENDED_ALL_SEGMENTS_TEXT_PATTERN)
-    add_definitions (-DUSE_EXTENDED_ALL_SEGMENTS_TEXT_PATTERN)
-endif()
-
-if(ENABLE_SYSTEM_GET_STORE_DEMO_LINK)
-    message("Building with System Service getStoreDemoLink")
-    add_definitions (-DENABLE_SYSTEM_GET_STORE_DEMO_LINK)
-endif()
-
-if (BUILD_ENABLE_TELEMETRY_LOGGING)
-    message("Building with telemetry logging")
-    add_definitions (-DENABLE_TELEMETRY_LOGGING)
 endif()
 
 if (BUILD_ENABLE_LINK_LOCALTIME)
@@ -119,25 +78,8 @@ if (BUILD_ENABLE_LINK_LOCALTIME)
     add_definitions (-DENABLE_LINK_LOCALTIME)
 endif()
 
-# only on LLama
-if(BUILD_ENABLE_APP_CONTROL_AUDIOPORT_INIT)
-   add_definitions (-DAPP_CONTROL_AUDIOPORT_INIT)
-endif()
-
-if(NET_DISABLE_NETSRVMGR_CHECK)
-    add_definitions (-DNET_DISABLE_NETSRVMGR_CHECK)
-endif()
-
 if (ENABLE_RFC_MANAGER)
     message("Using binary for RFC Maintenance task")
     add_definitions (-DENABLE_RFC_MANAGER=ON)
 endif()
 
-if (DISABLE_DCM_TASK)
-    message("Disabling DCM Maintenance task")
-    add_definitions (-DDISABLE_DCM_TASK=ON)
-endif()
-
-if(BUILD_ENABLE_ERM)
-	add_definitions(-DENABLE_ERM)
-endif()
