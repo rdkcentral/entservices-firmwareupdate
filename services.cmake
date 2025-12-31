@@ -18,6 +18,7 @@
 #
 # features
 #
+
 add_definitions (-DUSE_IARM)
 option(USE_IARM "USE_IARM" ON)
 
@@ -53,7 +54,6 @@ option(PLUGIN_CONTINUEWATCHING "PLUGIN_CONTINUEWATCHING" ON)
 #add_definitions (-DHAS_API_TTSSETTINGSSERVICE)
 #add_definitions (-DHAS_API_TTSSESSIONSERVICE)
 #add_definitions (-DHAS_API_TTSRESOURCESERVICE)
-
 if (BUILD_ENABLE_SYSTIMEMGR_SUPPORT)
     message("Building with SYSTIMEMGR_SUPPORT enabled")
    add_definitions (-DENABLE_SYSTIMEMGR_SUPPORT)
@@ -73,9 +73,30 @@ if (BUILD_ENABLE_CLOCK)
     add_definitions (-DCLOCK_BRIGHTNESS_ENABLED)
 endif()
 
+if(ENABLE_SYSTEM_GET_STORE_DEMO_LINK)
+    message("Building with System Service getStoreDemoLink")
+    add_definitions (-DENABLE_SYSTEM_GET_STORE_DEMO_LINK)
+endif()
+
+if (BUILD_ENABLE_TELEMETRY_LOGGING)
+    message("Building with telemetry logging")
+    add_definitions (-DENABLE_TELEMETRY_LOGGING)
+endif()
+
 if (BUILD_ENABLE_LINK_LOCALTIME)
     message("Building with link localtime")
     add_definitions (-DENABLE_LINK_LOCALTIME)
+endif()
+
+add_definitions (-DENABLE_DEEP_SLEEP)
+
+# only on LLama
+if(BUILD_ENABLE_APP_CONTROL_AUDIOPORT_INIT)
+   add_definitions (-DAPP_CONTROL_AUDIOPORT_INIT)
+endif()
+
+if(NET_DISABLE_NETSRVMGR_CHECK)
+    add_definitions (-DNET_DISABLE_NETSRVMGR_CHECK)
 endif()
 
 if (ENABLE_RFC_MANAGER)
