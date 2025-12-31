@@ -136,7 +136,6 @@ jobs:
         run: |
             cd $GITHUB_WORKSPACE/entservices-firmwareupdate
             patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/Firmware_postFlash.patch
-            patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/Maintenancemanager.patch
             cd -
 
       - name: Apply patches Network manager
@@ -651,8 +650,6 @@ jobs:
           -o coverage
           -t "entservices-firmwareupdate coverage"
           filtered_coverage.info
-          &&
-          lcov --extract filtered_coverage.info "*/MaintenanceManager/MaintenanceManager.cpp" -o maintenancemanager_coverage.info
 
       - name: Upload artifacts
         if: ${{ !env.ACT }}
