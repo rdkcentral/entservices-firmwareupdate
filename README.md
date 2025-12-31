@@ -1,123 +1,62 @@
-# RDK Services - Firmware Update
+# FirmwareUpdate
+The FirmwareUpdate plugin provides an interface for FirmwareUpdate.
 
-This repository contains the **FirmwareUpdate** plugin for RDK (Reference Design Kit) devices, providing firmware update capabilities through the Thunder/WPEFramework plugin architecture.
+## Versions
+`org.rdk.FirmwareUpdate.1`
 
-## Overview
+## Methods:
+```
+curl --req POST --data '{"jsonrpc":"2.0","id":"3","method": "Controller.1.activate", "params": {"callsign":"org.rdk.FirmwareUpdate"}}' http://127.0.0.1:9998/jsonrpc
 
-The FirmwareUpdate plugin enables:
-- Firmware update operations on RDK devices
-- Integration with device settings (DS) and IARM Bus (optional)
-- RESTful JSON-RPC API for firmware management
+curl -H 'content-type:text/plain;' --data-binary '{"jsonrpc": 2.0, "id": 0, "method": "org.rdk.FirmwareUpdate.getUpdateState"}' http://127.0.0.1:9998/jsonrpc
 
-## Repository Structure
+curl -H 'content-type:text/plain;' --data-binary '{"jsonrpc": 2.0, "id": 1, "method": "org.rdk.FirmwareUpdate.setAutoReboot", "params": {"enable": true}}' http://127.0.0.1:9998/jsonrpc
+
+curl -H 'content-type:text/plain;' --data-binary '{"jsonrpc": 2.0, "id": 2, "method": "org.rdk.FirmwareUpdate.updateFirmware", "params": {"firmwareFilepath": "", "firmwareType": ""}}' http://127.0.0.1:9998/jsonrpc
 
 ```
-entservices-firmwareupdate/
-├── FirmwareUpdate/          # FirmwareUpdate plugin source
-├── helpers/                 # Shared utility functions
-├── Tests/
-│   ├── L1Tests/            # Unit tests
-│   └── L2Tests/            # Integration tests
-├── cmake/                   # CMake find modules
-├── .github/workflows/       # CI/CD workflows
-└── CMakeLists.txt          # Root build configuration
+
+## Responses:
+```
+getUpdateState
+{
+    "jsonrpc": 2.0,
+    "id": 0,
+    "result": {
+        "state": "VALIDATION_FAILED",
+        "substate": "NOT_APPLICABLE"
+    }
+}
+
+setAutoReboot
+{
+    "jsonrpc": 2.0,
+    "id": 1,
+    "method": "org.rdk.FirmwareUpdate.setAutoReboot",
+    "params": {
+        "enable": true
+    }
+}
+updateFirmware
+{
+    "jsonrpc": 2.0,
+    "id": 2,
+    "method": "org.rdk.FirmwareUpdate.updateFirmware",
+    "params": {
+        "firmwareFilepath": "",
+        "firmwareType": ""
+    }
+}
 ```
 
-## Building
-
-### Prerequisites
-
-- CMake 3.16 or higher
-- Thunder/WPEFramework (R4.4.1 or compatible)
-- C++11 compatible compiler
-- Optional: DeviceSettings (DS), IARMBus libraries
-
-### Build Instructions
-
-```bash
-# Configure
-cmake -S . -B build \
-  -DCMAKE_INSTALL_PREFIX=/usr \
-  -DPLUGIN_FIRMWAREUPDATE=ON \
-  -DDS_FOUND=ON
-
-# Build
-cmake --build build -j$(nproc)
-
-# Install
-cmake --install build
+## Events
 ```
+onFlashingStateChange
 
-### Build Options
+This notification is raised between flashing started state and flashing succeeded/failed.
 
-- `PLUGIN_FIRMWAREUPDATE=ON` - Enable FirmwareUpdate plugin (default: ON)
-- `DS_FOUND=ON` - Enable DeviceSettings integration (optional)
-- `RDK_SERVICES_L1_TEST=ON` - Build L1 unit tests
-- `RDK_SERVICE_L2_TEST=ON` - Build L2 integration tests
-- `COMCAST_CONFIG=ON` - Enable Comcast-specific configurations
+onUpdateStateChange
 
-## Testing
+notify Firmware update state change.
 
-### Running L1 Tests (Unit Tests)
-
-```bash
-cmake -S . -B build \
-  -DRDK_SERVICES_L1_TEST=ON \
-  -DPLUGIN_FIRMWAREUPDATE=ON
-
-cmake --build build
-ctest --test-dir build --output-on-failure
 ```
-
-### Running L2 Tests (Integration Tests)
-
-```bash
-cmake -S . -B build \
-  -DRDK_SERVICE_L2_TEST=ON \
-  -DPLUGIN_FIRMWAREUPDATE=ON
-
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-## Integration
-
-### Yocto/OpenEmbedded
-
-To integrate into your Yocto build:
-
-```bitbake
-# In your recipe or layer
-SRC_URI = "git://github.com/rdkcentral/entservices-firmwareupdate.git;protocol=https;branch=develop"
-
-inherit cmake
-
-DEPENDS = "wpeframework wpeframework-plugins"
-
-EXTRA_OECMAKE += " \
-    -DPLUGIN_FIRMWAREUPDATE=ON \
-    -DCMAKE_BUILD_TYPE=Release \
-"
-```
-
-## CI/CD
-
-This repository includes GitHub Actions workflows for:
-- **L1 Tests**: Unit test execution with coverage
-- **L2 Tests**: Integration test execution
-- **Coverity**: Static code analysis
-- **Native Build**: Full build validation
-
-## Contributing
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
-
-## License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-For issues and questions:
-- GitHub Issues: https://github.com/rdkcentral/entservices-firmwareupdate/issues
-- RDK Central: https://rdkcentral.com/
