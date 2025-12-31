@@ -357,11 +357,11 @@ jobs:
           # Install
           cmake --install build/networkmanager_rdk
       
-      - name: Build entservices-softwareupdate
+      - name: Build entservices-firmwareupdate
         run: >
           cmake
-          -S "$GITHUB_WORKSPACE/entservices-softwareupdate"
-          -B build/entservices-softwareupdate
+          -S "$GITHUB_WORKSPACE/entservices-firmwareupdate"
+          -B build/entservices-firmwareupdate
           -DCMAKE_TOOLCHAIN_FILE="${{ env.TOOLCHAIN_FILE }}"
           -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr"
           -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake"
@@ -655,7 +655,7 @@ jobs:
         if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
-          name: artifacts-L2-softwareupdate
+          name: artifacts-L2-firmwareupdate
           path: |
             coverage/
             valgrind_log
