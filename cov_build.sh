@@ -7,7 +7,7 @@ ls -la ${GITHUB_WORKSPACE}
 ############################
 # Build entservices-firmwareupdate
 echo "======================================================================================"
-echo "coverity building entservices-firmwareupdate"
+echo "building entservices-firmwareupdate"
 
 cd ${GITHUB_WORKSPACE}
 cmake -G Ninja -S "$GITHUB_WORKSPACE" -B build/entservices-firmwareupdate \
