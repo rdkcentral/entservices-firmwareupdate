@@ -2,7 +2,7 @@
 The FirmwareUpdate plugin provides an interface for FirmwareUpdate.
 
 ## Versions
-`org.rdk.FirmwareUpdate.1`
+`org.rdk.FirmwareUpdate
 
 ## Methods:
 ```
