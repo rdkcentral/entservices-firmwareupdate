@@ -138,8 +138,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-firmwareupdate
           path: entservices-firmwareupdate
-          ref: feature/RDKEMW-11896
-
+         
       - name: Checkout googletest
         if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v3
