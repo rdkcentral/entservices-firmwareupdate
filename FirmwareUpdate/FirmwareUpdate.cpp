@@ -69,7 +69,7 @@ namespace WPEFramework
         ASSERT(nullptr == _firmwareUpdate);
         ASSERT(0 == _connectionId);
 
-        SYSLOG(Logging::Startup, (_T("predebug1 FirmwareUpdate::Initialize: PID=%u"), getpid()));
+        SYSLOG(Logging::Startup, (_T("FirmwareUpdate::Initialize: PID=%u"), getpid()));
 
         _service = service;
         _service->AddRef();
