@@ -139,7 +139,7 @@ jobs:
           repository: rdkcentral/entservices-firmwareupdate
           path: entservices-firmwareupdate
           ref: develop
-         
+  
       - name: Checkout googletest
         if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v3
