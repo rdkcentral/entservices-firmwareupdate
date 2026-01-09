@@ -88,20 +88,20 @@ jobs:
           path: ThunderTools
           ref: R4.4.3
 
-      - name: Checkout entservices-firmwareupdate
+      - name: Checkout entservices-softwareupdate
         if: ${{ inputs.caller_source == 'local' }}
         uses: actions/checkout@v3
         with:
-          path: entservices-firmwareupdate
+          path: entservices-softwareupdate
 
-      - name: Checkout entservices-firmwareupdate-testframework
+      - name: Checkout entservices-softwareupdate-testframework
         if: ${{ inputs.caller_source == 'testframework' }}
         uses: actions/checkout@v3
         with:
-          repository: rdkcentral/entservices-firmwareupdate
-          path: entservices-firmwareupdate
+          repository: rdkcentral/entservices-softwareupdate
+          path: entservices-softwareupdate
           ref: develop
-     
+
       - name: Checkout entservices-testframework
         uses: actions/checkout@v3
         with:
@@ -132,10 +132,11 @@ jobs:
           patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/00010-R4.4-Add-support-for-project-dir.patch
           cd -
      
-      - name: Apply patches entservices-firmwareupdate
-        run: |
-            cd $GITHUB_WORKSPACE/entservices-firmwareupdate
+      - name: Apply patches entservices-softwareupdate
+        run: |  
+            cd $GITHUB_WORKSPACE/entservices-softwareupdate
             patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/Firmware_postFlash.patch
+            patch -p1 < $GITHUB_WORKSPACE/entservices-testframework/patches/Maintenancemanager.patch
             cd -
 
       - name: Apply patches Network manager
@@ -219,6 +220,7 @@ jobs:
           &&
           mkdir -p
           headers
+          headers/rdk/ds
           headers/rdk/iarmbus
           headers/rdk/iarmmgrs-hal
           headers/systemservices
@@ -227,6 +229,28 @@ jobs:
           cd headers
           &&
           touch
+          rdk/ds/host.hpp
+          rdk/ds/videoOutputPort.hpp
+          rdk/ds/videoOutputPortType.hpp
+          rdk/ds/videoOutputPortConfig.hpp
+          rdk/ds/videoResolution.hpp
+          rdk/ds/audioOutputPort.hpp
+          rdk/ds/audioOutputPortType.hpp
+          rdk/ds/sleepMode.hpp
+          rdk/ds/frontPanelConfig.hpp
+          rdk/ds/frontPanelTextDisplay.hpp
+          rdk/ds/hdmiIn.hpp
+          rdk/ds/compositeIn.hpp
+          rdk/ds/audioOutputPortConfig.hpp
+          rdk/ds/exception.hpp
+          rdk/ds/dsError.h
+          rdk/ds/dsMgr.h
+          rdk/ds/manager.hpp
+          rdk/ds/dsTypes.h
+          rdk/ds/dsUtl.h
+          rdk/ds/audioOutputPortType.hpp
+          rdk/ds/audioOutputPortConfig.hpp
+          rdk/ds/pixelResolution.hpp
           rdk/iarmbus/libIARM.h
           rdk/iarmbus/libIBus.h
           rdk/iarmbus/libIBusDaemon.h
@@ -238,8 +262,26 @@ jobs:
           libudev.h
           systemservices/proc/readproc.h
           systemservices/secure_wrapper.h
+          systemaudioplatform.h
           maintenanceMGR.h
           pkg.h
+          edid-parser.hpp
+          btmgr.h
+          tvError.h
+          tvTypes.h
+          tvTypesODM.h
+          tvSettings.h
+          tvSettingsExtODM.h
+          tvSettingsODM.h
+          tvTypesODM.h
+          tr181api.h
+          list.hpp
+          dsDisplay.h
+          rdk/ds/AudioStereoMode.hpp
+          rdk/ds/VideoDFC.hpp
+          dsRpc.h
+          &&
+          cp -r /usr/include/gstreamer-1.0/gst /usr/include/glib-2.0/* /usr/lib/x86_64-linux-gnu/glib-2.0/include/* /usr/local/include/trower-base64/base64.h /usr/include/libdrm/drm.h /usr/include/libdrm/drm_mode.h /usr/include/xf86drm.h .
 
       - name: Set clang toolchain
         if: ${{ matrix.compiler == 'clang' }}
@@ -316,11 +358,11 @@ jobs:
           # Install
           cmake --install build/networkmanager_rdk
       
-      - name: Build entservices-firmwareupdate
+      - name: Build entservices-softwareupdate
         run: >
           cmake
-          -S "$GITHUB_WORKSPACE/entservices-firmwareupdate"
-          -B build/entservices-firmwareupdate
+          -S "$GITHUB_WORKSPACE/entservices-softwareupdate"
+          -B build/entservices-softwareupdate
           -DCMAKE_TOOLCHAIN_FILE="${{ env.TOOLCHAIN_FILE }}"
           -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr"
           -DCMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake"
@@ -337,13 +379,16 @@ jobs:
           -DPLUGIN_PERSISTENTSTORE_PATH="/tmp/secure/persistent/rdkservicestore"
           -DPLUGIN_PERSISTENTSTORE_LEGACYPATH="/tmp/persistent/rdkservicestore"
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers
+          -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/rdk/ds
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/rdk/iarmbus
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/rdk/iarmmgrs-hal
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/systemservices
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/systemservices/proc
           -I $GITHUB_WORKSPACE/install/usr/include
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/devicesettings.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Iarm.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Rfc.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/RBus.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Udev.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Wraps.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/maintenanceMGR.h
@@ -351,27 +396,39 @@ jobs:
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/secure_wrappermock.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/wpa_ctrl_mock.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/readprocMockInterface.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/btmgr.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tr181api.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvSettings.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvError.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvSettingsExtODM.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvSettingsODM.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvTypes.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/essos-resmgr.h
           -Werror -Wall -Wno-unused-result -Wno-deprecated-declarations -Wno-error=format=
           -Wl,-wrap,system -Wl,-wrap,popen -Wl,-wrap,syslog -Wl,-wrap,v_secure_system -Wl,-wrap,v_secure_popen -Wl,-wrap,v_secure_pclose -Wl,-wrap,unlink
           -DUSE_IARMBUS
           -DRDK_SERVICE_L2_TEST
-          -DDISABLE_SECURITY_TOKEN"
+          -DDISABLE_SECURITY_TOKEN
+          -DENABLE_THERMAL_PROTECTION"
           -DPLUGIN_PERSISTENTSTORE_PATH="/tmp/secure/persistent/rdkservicestore"
           -DPLUGIN_PERSISTENTSTORE_LEGACYPATH="/tmp/persistent/rdkservicestore"
           -DCOMCAST_CONFIG=OFF
+          -DCMAKE_DISABLE_FIND_PACKAGE_DS=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_IARMBus=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_Udev=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RFC=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RBus=ON
           -DPLUGIN_FIRMWAREUPDATE=ON
+          -DPLUGIN_MAINTENANCEMANAGER=ON
           -DUSE_THUNDER_R4=ON
           -DPLUGIN_L2Tests=ON
           -DRDK_SERVICE_L2_TEST=ON
+          -DDS_FOUND=ON
           -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
           &&
-          cmake --build build/entservices-firmwareupdate -j8
+          cmake --build build/entservices-softwareupdate -j8
           &&
-          cmake --install build/entservices-firmwareupdate
+          cmake --install build/entservices-softwareupdate
 
       - name: Build entservices-testframework
         run: >
@@ -394,15 +451,18 @@ jobs:
           -DPLUGIN_PERSISTENTSTORE_PATH="/tmp/secure/persistent/rdkservicestore"
           -DPLUGIN_PERSISTENTSTORE_LEGACYPATH="/tmp/persistent/rdkservicestore"
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers
+          -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/rdk/ds
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/rdk/iarmbus
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/rdk/iarmmgrs-hal
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/systemservices
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/systemservices/proc
-          -I $GITHUB_WORKSPACE/entservices-firmwareupdate/helpers
+          -I $GITHUB_WORKSPACE/entservices-softwareupdate/helpers
           -I $GITHUB_WORKSPACE/install/usr/include
           -I ./usr/include/libdrm
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/devicesettings.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Iarm.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Rfc.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/RBus.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Udev.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Wraps.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/maintenanceMGR.h
@@ -410,22 +470,33 @@ jobs:
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/secure_wrappermock.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/wpa_ctrl_mock.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/readprocMockInterface.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/btmgr.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tr181api.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvSettings.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvError.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvSettingsExtODM.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvSettingsODM.h
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/tvTypes.h
           -Werror -Wall -Wno-unused-result -Wno-deprecated-declarations -Wno-error=format=
           -Wl,--no-as-needed
           -DUSE_IARMBUS
           -DRDK_SERVICE_L2_TEST
-          -DDISABLE_SECURITY_TOKEN"
+          -DDISABLE_SECURITY_TOKEN
+          -DENABLE_THERMAL_PROTECTION"
           -DPLUGIN_PERSISTENTSTORE_PATH="/tmp/secure/persistent/rdkservicestore"
           -DPLUGIN_PERSISTENTSTORE_LEGACYPATH="/tmp/persistent/rdkservicestore"
           -DCOMCAST_CONFIG=OFF
+          -DCMAKE_DISABLE_FIND_PACKAGE_DS=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_IARMBus=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_Udev=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RFC=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RBus=ON
           -DPLUGIN_FIRMWAREUPDATE=ON
+          -DPLUGIN_MAINTENANCEMANAGER=ON
           -DUSE_THUNDER_R4=ON
           -DPLUGIN_L2Tests=ON
           -DRDK_SERVICE_L2_TEST=ON
+          -DDS_FOUND=ON
           -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
           &&
           cmake --build build/entservices-testframework -j8
@@ -562,7 +633,7 @@ jobs:
           &&
           lcov -c
           -o coverage.info
-          -d build/entservices-firmwareupdate
+          -d build/entservices-softwareupdate
           &&
           lcov
           -r coverage.info
@@ -580,14 +651,16 @@ jobs:
           &&
           genhtml
           -o coverage
-          -t "entservices-firmwareupdate coverage"
+          -t "entservices-softwareupdate coverage"
           filtered_coverage.info
+          &&
+          lcov --extract filtered_coverage.info "*/MaintenanceManager/MaintenanceManager.cpp" -o maintenancemanager_coverage.info
 
       - name: Upload artifacts
         if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
-          name: artifacts-L2-firmwareupdate
+          name: artifacts-L2-softwareupdate
           path: |
             coverage/
             valgrind_log
