@@ -461,10 +461,10 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug
           -DDS_FOUND=ON
           -DHAS_FRONT_PANEL=ON
+          -DPLUGIN_FIRMWAREUPDATE=ON
           -DRDK_SERVICES_L1_TEST=ON
           -DUSE_THUNDER_R4=ON
           -DHIDE_NON_EXTERNAL_SYMBOLS=OFF
-          -DPLUGIN_FIRMWAREUPDATE=ON
           &&
           cmake --build build/entservices-firmwareupdate -j8
           &&
