@@ -52,7 +52,7 @@ if(DISABLE_SECURITY_TOKEN)
 endif()
 
 if(PLUGIN_FIRMWAREUPDATE)
-    add_subdirectory(FirmwareUpdate)
+    add_subdirectory(plugin)
 endif()
 
 if(WPEFRAMEWORK_CREATE_IPKG_TARGETS)
