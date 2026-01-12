@@ -103,7 +103,7 @@ endmacro()
 
 # PLUGIN_FIRMWAREUPDATE
 set (FIRMWAREUPDATE_LIBS ${NAMESPACE}FirmwareUpdate ${NAMESPACE}FirmwareUpdateImplementation)
-set (FIRMWAREUPDATE_INC ${CMAKE_SOURCE_DIR}/../entservices-firmwareupdate/FirmwareUpdate ${CMAKE_SOURCE_DIR}/../entservices-firmwareupdate/helpers)
+set (FIRMWAREUPDATE_INC ${CMAKE_SOURCE_DIR}/../entservices-firmwareupdate/plugin ${CMAKE_SOURCE_DIR}/../entservices-firmwareupdate/helpers)
 add_plugin_test_ex(PLUGIN_FIRMWAREUPDATE tests/test_FirmwareUpdate.cpp "${FIRMWAREUPDATE_INC}" "${FIRMWAREUPDATE_LIBS}")
 
 add_library(${MODULE_NAME} SHARED ${TEST_SRC})
