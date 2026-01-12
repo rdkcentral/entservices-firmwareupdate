@@ -138,7 +138,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-firmwareupdate
           path: entservices-firmwareupdate
-          ref: develop
+          ref: feature/RDKEMW-11896
 
       - name: Checkout googletest
         if: steps.cache.outputs.cache-hit != 'true'
@@ -662,7 +662,7 @@ jobs:
           &&
           lcov -c
           -o coverage.info
-          -d build/entservices-firmwareupdate
+          -d $GITHUB_WORKSPACE/build
           &&
           lcov
           -r coverage.info
