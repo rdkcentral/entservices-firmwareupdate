@@ -51,20 +51,8 @@ if(DISABLE_SECURITY_TOKEN)
     add_definitions(-DDISABLE_SECURITY_TOKEN)
 endif()
 
-if(PLUGIN_PACKAGER)
-    add_subdirectory(Packager)
-endif()
-
 if(PLUGIN_FIRMWAREUPDATE)
-    add_subdirectory(FirmwareUpdate)
-endif()
-
-if(PLUGIN_MAINTENANCEMANAGER)
-    add_subdirectory(MaintenanceManager)
-endif()
-
-if(PLUGIN_FIRMWAREDOWNLOAD)
-    add_subdirectory(FirmwareDownload)
+    add_subdirectory(plugin)
 endif()
 
 if(WPEFRAMEWORK_CREATE_IPKG_TARGETS)
