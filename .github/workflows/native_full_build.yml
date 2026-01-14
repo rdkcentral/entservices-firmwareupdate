@@ -1,4 +1,7 @@
 name: Build Component in Native Environment
+permissions:
+  contents: read
+  pull-requests: write
 
 on:
   push:
@@ -8,7 +11,7 @@ on:
 
 jobs:
   build-entservices-on-pr:
-    name: Build entservices-softwareupdate component in github rdkcentral
+    name: Build entservices-firmwareupdate component in github rdkcentral
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/rdkcentral/docker-rdk-ci:latest
