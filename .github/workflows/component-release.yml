@@ -18,8 +18,8 @@ jobs:
         env:
           PR_DESC: ${{ github.event.pull_request.body }}
         run: |
-          if ! echo "$PR_DESC" | grep -qiE 'version[[:space:]]*:[[:space:]]*(major|minor|patch|ignore)'; then
-            echo "ERROR: PR description must include a version field in the format 'version: major|minor|patch|ignore' (case-insensitive). Example: version: minor"
+          if ! echo "$PR_DESC" | grep -qiE 'version[[:space:]]*:[[:space:]]*(major|minor|patch)'; then
+            echo "ERROR: PR description must include a version field in the format 'version: major|minor|patch' (case-insensitive). Example: version: minor"
             exit 1
           fi
           echo "Validation passed: version field found."
@@ -30,17 +30,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-
-      - name: Check if release should be ignored
-        env:
-          PR_DESC: ${{ github.event.pull_request.body }}
-        run: |
-          VERSION_TYPE=$(echo "$PR_DESC" | grep -oiP 'version\s*:\s*\K(major|minor|patch|ignore)' | tr '[:upper:]' '[:lower:]')
-          if [[ "$VERSION_TYPE" == "ignore" ]]; then
-            echo "Version set to 'ignore'. Skipping release process."
-            exit 0
-          fi
-          echo "VERSION_TYPE=$VERSION_TYPE" >> $GITHUB_ENV
 
       - name: Set up Git
         run: |
@@ -113,7 +102,7 @@ jobs:
             exit 0
           fi
           git flow release start $RELEASE_VERSION
-          auto-changelog --starting-date 2026-01-15 -v $RELEASE_VERSION
+          auto-changelog -v $RELEASE_VERSION
           git add CHANGELOG.md
           git commit -m "$RELEASE_VERSION release changelog updates"
           git flow release publish
