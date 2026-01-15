@@ -56,12 +56,10 @@ Returns current firmware update status and progress information.
 
 **States Include**:
 - `UNINITIALIZED`: No update in progress
-- `DOWNLOAD_INPROGRESS`: Downloading firmware
-- `DOWNLOAD_COMPLETE`: Download finished successfully
-- `DOWNLOAD_FAILED`: Download encountered errors
-- `FLASH_INPROGRESS`: Installing firmware
-- `FLASH_COMPLETE`: Installation successful
-- `FLASH_FAILED`: Installation failed
+- `FLASHING_STARTED`: Firmware flashing has started
+- `FLASHING_SUCCEEDED`: Firmware flashing completed successfully
+- `FLASHING_FAILED`: Firmware flashing failed
+- `WAITING_FOR_REBOOT`: Flashing completed; waiting for device reboot
 - `VALIDATION_FAILED`: Firmware validation failed
 
 #### `updateFirmware`
