@@ -10,27 +10,27 @@ The FirmwareUpdate plugin is built on the WPEFramework (Thunder) platform, provi
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    WPEFramework Controller                   │
+│                    WPEFramework Controller                  │
 ├─────────────────────────────────────────────────────────────┤
-│                    JSON-RPC Interface                       │
+│                     JSON-RPC Interface                      │
 ├─────────────────────────────────────────────────────────────┤
-│  FirmwareUpdate Plugin (org.rdk.FirmwareUpdate)            │
-│  ┌───────────────┐    ┌─────────────────────────────────┐   │
-│  │ Plugin Proxy  │    │   Implementation (Out-of-Proc)  │   │
-│  │ - Registration│    │   - Business Logic              │   │
-│  │ - Interface   │◄──►│   - System Integration          │   │
-│  │ - Events      │    │   - IARM Communication          │   │
-│  └───────────────┘    └─────────────────────────────────┘   │
+│           FirmwareUpdate Plugin (org.rdk.FirmwareUpdate)    │
+│  ┌───────────────┐      ┌────────────────────────────────┐ │
+│  │  Plugin Proxy │      │ Implementation (Out-of-Proc)  │ │
+│  │ - Registration│      │ - Business Logic              │ │
+│  │ - Interface   │◄────►│ - System Integration          │ │
+│  │ - Events      │      │ - IARM Communication          │ │
+│  └───────────────┘      └────────────────────────────────┘ │
 ├─────────────────────────────────────────────────────────────┤
-│                    Helper Utilities                         │
-│  ┌─────────────┐ ┌──────────────┐ ┌─────────────────────┐   │
-│  │ Utils::IARM │ │ Utils::File  │ │ Utils::JsonRPC      │   │
-│  └─────────────┘ └──────────────┘ └─────────────────────┘   │
+│                       Helper Utilities                      │
+│  ┌─────────────┐   ┌──────────────┐   ┌──────────────────┐ │
+│  │ Utils::IARM │   │ Utils::File  │   │ Utils::JsonRPC   │ │
+│  └─────────────┘   └──────────────┘   └──────────────────┘ │
 ├─────────────────────────────────────────────────────────────┤
-│                   System Integration                        │
-│  ┌─────────────┐ ┌──────────────┐ ┌─────────────────────┐   │
-│  │ IARM Bus    │ │ Device Props │ │ Maintenance MGR     │   │
-│  └─────────────┘ └──────────────┘ └─────────────────────┘   │
+│                      System Integration                     │
+│  ┌─────────────┐   ┌──────────────┐   ┌──────────────────┐ │
+│  │  IARM Bus   │   │ Device Props │   │ Maintenance MGR  │ │
+│  └─────────────┘   └──────────────┘   └──────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
 
