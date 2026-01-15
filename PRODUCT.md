@@ -66,7 +66,8 @@ Returns current firmware update status and progress information.
 Initiates firmware update process with specified firmware file and type.
 ```bash
 curl -H 'content-type:text/plain;' --data-binary \
-'{"jsonrpc": "2.0", "id": 2, "method": "org.rdk.FirmwareUpdate.updateFirmware", "params": {"firmwareFilepath": "/path/to/firmware.bin", "firmwareType": "PCI"}}' \
+'{"jsonrpc": "2.0", "id": 2, "method": "org.rdk.FirmwareUpdate.updateFirmware", 
+  "params": {"firmwareFilepath": "/path/to/firmware.bin", "firmwareType": "PCI"}}' \
 http://127.0.0.1:9998/jsonrpc
 ```
 
