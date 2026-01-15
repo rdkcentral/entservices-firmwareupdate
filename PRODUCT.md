@@ -9,7 +9,7 @@ The FirmwareUpdate plugin is a critical system component for RDK (Reference Desi
 ### Core Functionality
 
 #### 1. Firmware Update Management
-- **Multi-Type Support**: Handles different firmware types (PCI, DRI)
+- **Multi-type Support**: Handles different firmware types (PCI, DRI)
 - **Secure Downloads**: Validates firmware integrity before installation
 - **Progress Tracking**: Real-time progress monitoring during update process
 - **State Management**: Comprehensive state tracking throughout update lifecycle
