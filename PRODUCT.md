@@ -186,4 +186,4 @@ Provides real-time progress updates during firmware installation.
 - **Staged Rollouts**: Gradual deployment with monitoring
 - **Rollback Procedures**: Quick recovery from problematic updates
 
-The FirmwareUpdate plugin represents a enterprise-grade solution for device lifecycle management, combining security, reliability, and ease of use to meet the demands of modern connected device ecosystems.
+The FirmwareUpdate plugin represents an enterprise-grade solution for device lifecycle management, combining security, reliability, and ease of use to meet the demands of modern connected device ecosystems.
