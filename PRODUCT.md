@@ -1,189 +1,185 @@
-# FirmwareUpdate Plugin - Product Overview
+# FirmwareUpdate Plugin Product Documentation
 
-## Product Description
-
-The FirmwareUpdate plugin is a critical system component for RDK (Reference Design Kit) devices that provides secure, reliable, and automated firmware update capabilities. Built on the WPEFramework (Thunder) platform, it enables Over-The-Air (OTA) firmware updates for set-top boxes, smart TVs, and other RDK-powered devices.
+## Product Overview
+The FirmwareUpdate plugin is a comprehensive firmware management solution designed for RDK (Reference Design Kit) based set-top boxes, gateways, and media devices. It provides secure, reliable firmware update capabilities through a standardized JSON-RPC API interface, enabling both manual and automated firmware management workflows.
 
 ## Key Features
 
-### Core Functionality
+### Firmware Update Management
+- **Multi-Protocol Support**: HTTP, USB, and local file system firmware sources
+- **Firmware Type Support**: PCI, DRI (Device Resource Interface), and other device-specific firmware types
+- **Validation Framework**: Pre-installation firmware integrity and compatibility verification
+- **Progress Tracking**: Real-time progress monitoring with percentage completion updates
+- **State Management**: Comprehensive state tracking throughout the update lifecycle
 
-#### 1. Firmware Update Management
-- **Multi-type Support**: Handles different firmware types (PCI, DRI)
-- **Secure Downloads**: Validates firmware integrity before installation
-- **Progress Tracking**: Real-time progress monitoring during update process
-- **State Management**: Comprehensive state tracking throughout update lifecycle
-
-#### 2. Automated Reboot Management  
-- **Auto-Reboot Control**: Configurable automatic reboot after successful updates
-- **Maintenance Windows**: Coordinates with system maintenance schedules
-- **Graceful Shutdowns**: Ensures proper system state before reboot
-
-#### 3. Multi-Protocol Support
-- **HTTP Downloads**: Standard HTTP-based firmware downloads
-- **HTTPS Support**: Secure encrypted downloads
-- **USB Updates**: Local firmware updates via USB storage
-- **Background Processing**: Non-blocking updates that don't interrupt user experience
-
-### Advanced Capabilities
-
-#### Real-Time Monitoring
-- **Progress Events**: Percentage completion during flashing operations
-- **State Notifications**: Update state changes broadcast to subscribers
-- **Error Reporting**: Detailed error states and diagnostic information
-
-#### System Integration
-- **IARM Bus Communication**: Deep integration with RDK system services
-- **Device Property Management**: Hardware-specific update handling
-- **Service Coordination**: Synchronization with other system components
+### Operational Capabilities
+- **Automatic Reboot Control**: Configurable automatic device restart after successful updates
+- **Background Processing**: Non-blocking firmware operations with asynchronous event notifications
+- **Error Recovery**: Robust error handling with detailed failure reporting and recovery mechanisms
+- **Maintenance Mode**: Special update modes for system maintenance scenarios
+- **User vs. Device Initiated Updates**: Support for both user-triggered and system-initiated updates
 
 ## API Interface
 
-### JSON-RPC Methods
+### Core Methods
 
 #### `getUpdateState`
-Returns current firmware update status and progress information.
+**Purpose**: Retrieve current firmware update status
+**Response**: Current state and sub-state information
 ```json
 {
-    "jsonrpc": "2.0",
-    "id": 0,
-    "result": {
-        "state": "VALIDATION_FAILED",
-        "substate": "NOT_APPLICABLE"
-    }
+  "state": "VALIDATION_FAILED|FLASHING_STARTED|FLASHING_FAILED|FLASHING_SUCCEEDED|WAITING_FOR_REBOOT",
+  "substate": "NOT_APPLICABLE|FIRMWARE_NOT_FOUND|FIRMWARE_INVALID|..."
 }
 ```
 
-**States Include**:
-- `UNINITIALIZED`: No update in progress
-- `FLASHING_STARTED`: Firmware flashing has started
-- `FLASHING_SUCCEEDED`: Firmware flashing completed successfully
-- `FLASHING_FAILED`: Firmware flashing failed
-- `WAITING_FOR_REBOOT`: Flashing completed; waiting for device reboot
-- `VALIDATION_FAILED`: Firmware validation failed
-
 #### `updateFirmware`
-Initiates firmware update process with specified firmware file and type.
-```bash
-curl -H 'content-type:text/plain;' --data-binary \
-'{"jsonrpc": "2.0", "id": 2, "method": "org.rdk.FirmwareUpdate.updateFirmware", 
-  "params": {"firmwareFilepath": "/path/to/firmware.bin", "firmwareType": "PCI"}}' \
-http://127.0.0.1:9998/jsonrpc
-```
-
+**Purpose**: Initiate firmware update process
 **Parameters**:
-- `firmwareFilepath`: Local path or URL to firmware image
+- `firmwareFilepath`: Local or remote path to firmware file
 - `firmwareType`: Type of firmware (PCI, DRI, etc.)
+**Validation**: Comprehensive parameter validation and pre-flight checks
 
 #### `setAutoReboot`
-Configures automatic reboot behavior after successful updates.
-```bash
-curl -H 'content-type:text/plain;' --data-binary \
-'{"jsonrpc": "2.0", "id": 1, "method": "org.rdk.FirmwareUpdate.setAutoReboot", 
-  "params": {"enable": true}}' \
-http://127.0.0.1:9998/jsonrpc
-```
+**Purpose**: Configure automatic reboot behavior after successful updates
+**Parameters**:
+- `enable`: Boolean flag to enable/disable automatic reboot
+**Integration**: RFC (Remote Feature Control) system integration for persistent settings
 
 ### Event Notifications
 
 #### `onUpdateStateChange`
-Broadcasts firmware update state transitions to all subscribed clients.
-- **Triggered**: When update state changes (download, flash, validation)
-- **Data**: Current state and substate information
-- **Use Case**: UI updates, logging, system monitoring
+**Purpose**: Notify clients of firmware update state changes
+**Data**: State and sub-state information
+**Trigger Points**: All major state transitions throughout the update process
 
 #### `onFlashingStateChange`
-Provides real-time progress updates during firmware installation.
-- **Triggered**: Periodically during flashing operation
-- **Data**: Percentage completion (0-100)
-- **Use Case**: Progress bars, time estimation, user feedback
+**Purpose**: Provide real-time progress updates during firmware installation
+**Data**: Percentage completion (0-100)
+**Frequency**: Regular updates during active flashing operations
 
-## Product Benefits
+## Supported Firmware Types
 
-### For Device Manufacturers
-- **Reduced Support Costs**: Automated updates minimize manual intervention
-- **Faster Deployment**: Quick rollout of bug fixes and feature updates
-- **Quality Assurance**: Built-in validation prevents corrupted installations
-- **Field Serviceability**: Remote updates reduce on-site service calls
+### PCI Firmware
+- **Use Case**: Peripheral Component Interconnect device firmware
+- **Validation**: Hardware compatibility verification
+- **Installation**: Direct device programming via system interfaces
 
-### For Service Operators
-- **Fleet Management**: Centralized firmware management for device populations
-- **Scheduled Maintenance**: Updates during low-usage periods
-- **Rollback Capability**: Safe recovery from problematic updates
-- **Compliance Tracking**: Audit trails for regulatory requirements
+### DRI Firmware
+- **Use Case**: Device Resource Interface firmware updates
+- **Features**: Specialized handling for DRI-compatible devices
+- **Integration**: System-level device resource management
 
-### For End Users
-- **Seamless Experience**: Background updates with minimal user disruption
-- **Improved Reliability**: Automatic bug fixes and security patches
-- **Enhanced Features**: New functionality delivered automatically
-- **Reduced Downtime**: Faster, more reliable update process
+### Custom Types
+- **Extensibility**: Support for vendor-specific firmware types
+- **Validation**: Configurable validation rules per firmware type
+- **Processing**: Adaptive handling based on firmware characteristics
+
+## Update State Machine
+
+### Primary States
+1. **VALIDATION_FAILED**: Pre-installation validation errors
+2. **FLASHING_STARTED**: Active firmware installation in progress
+3. **FLASHING_FAILED**: Installation process encountered errors
+4. **FLASHING_SUCCEEDED**: Firmware successfully installed
+5. **WAITING_FOR_REBOOT**: Awaiting device restart to complete update
+
+### Sub-States (Error Conditions)
+- **FIRMWARE_NOT_FOUND**: Specified firmware file not accessible
+- **FIRMWARE_INVALID**: Firmware file corruption or format issues
+- **FIRMWARE_OUTDATED**: Firmware version older than currently installed
+- **FIRMWARE_UPTODATE**: Firmware already at latest version
+- **FIRMWARE_INCOMPATIBLE**: Hardware/software compatibility mismatch
+- **PREWRITE_SIGNATURE_CHECK_FAILED**: Digital signature validation failed
+- **FLASH_WRITE_FAILED**: Physical firmware write operation failed
+- **POSTWRITE_FIRMWARE_CHECK_FAILED**: Post-installation verification failed
+- **POSTWRITE_SIGNATURE_CHECK_FAILED**: Post-installation signature verification failed
+
+## Security Features
+
+### Firmware Validation
+- **Signature Verification**: Digital signature validation for firmware authenticity
+- **Integrity Checks**: Hash-based validation to ensure firmware integrity
+- **Compatibility Validation**: Hardware and software version compatibility verification
+- **Size Validation**: Firmware file size and format validation
+
+### Access Control
+- **Plugin Security**: Thunder framework security token integration
+- **Operation Restrictions**: Controlled access to critical firmware operations
+- **State Protection**: Secure state transitions preventing unauthorized operations
 
 ## Use Cases
 
-### 1. Security Updates
-- **Critical Patches**: Immediate deployment of security fixes
-- **Vulnerability Response**: Rapid response to discovered threats
-- **Compliance Updates**: Regulatory requirement implementations
+### Automatic Updates
+- **Scheduled Updates**: Integration with system schedulers for automated updates
+- **Background Processing**: Non-intrusive updates during low-usage periods
+- **Retry Logic**: Automatic retry mechanisms for transient failures
+- **Rollback Support**: Safe fallback to previous firmware versions on failure
 
-### 2. Feature Rollouts
-- **New Services**: Enable new streaming services or applications
-- **UI Enhancements**: User interface improvements and updates
-- **Performance Optimizations**: System performance improvements
+### Manual Updates
+- **User-Initiated Updates**: Direct user control through management interfaces
+- **Diagnostic Updates**: Manual updates for troubleshooting and testing
+- **Maintenance Updates**: Specialized updates during maintenance windows
+- **Emergency Updates**: Critical security or bug fix updates
 
-### 3. Bug Fixes
-- **Stability Improvements**: System stability and reliability fixes
-- **Compatibility Updates**: Support for new content formats or protocols
-- **Integration Fixes**: Resolved issues with third-party services
+### Development and Testing
+- **Developer Tools**: Firmware deployment for development environments
+- **Testing Frameworks**: Automated testing with firmware variations
+- **Validation Tools**: Pre-production firmware validation workflows
+- **Quality Assurance**: Systematic testing of firmware update processes
 
-### 4. Maintenance Operations
-- **Scheduled Updates**: Planned maintenance window updates
-- **Bulk Deployments**: Large-scale fleet updates
-- **Staged Rollouts**: Gradual deployment with monitoring
+## Integration Points
 
-## Technical Advantages
+### System Integration
+- **IARM Bus**: Inter-application communication for system coordination
+- **RFC System**: Remote Feature Control for persistent configuration
+- **System Services**: Integration with device management and monitoring services
+- **File System**: Secure handling of firmware files and temporary storage
 
-### Robustness
-- **Error Recovery**: Comprehensive error handling and recovery mechanisms
-- **State Persistence**: Update state preserved across system restarts
-- **Validation Layers**: Multiple validation checkpoints prevent corruption
+### Platform Integration
+- **Thunder Framework**: Full integration with Thunder/WPEFramework ecosystem
+- **RDK Stack**: Native support for RDK platform components
+- **Device Drivers**: Direct integration with hardware abstraction layers
+- **System Management**: Coordination with device lifecycle management
 
-### Performance
-- **Asynchronous Operations**: Non-blocking updates maintain system responsiveness
-- **Optimized Downloads**: Efficient bandwidth utilization
-- **Memory Management**: Controlled resource usage during updates
+## Performance Characteristics
 
-### Integration
-- **Framework Native**: Deep integration with WPEFramework ecosystem
-- **Standard Interfaces**: RESTful API compatible with management systems
-- **Event-Driven**: Real-time notifications for monitoring and automation
+### Resource Usage
+- **Memory Efficiency**: Optimized memory usage during firmware operations
+- **CPU Utilization**: Background processing minimizing system impact
+- **Storage Management**: Efficient handling of temporary firmware files
+- **Network Optimization**: Bandwidth-conscious firmware downloads
 
-## Deployment Scenarios
+### Scalability
+- **Concurrent Operations**: Support for multiple firmware types
+- **Queue Management**: Orderly processing of multiple update requests
+- **Resource Allocation**: Dynamic resource allocation based on operation type
+- **System Load Balancing**: Adaptive behavior based on system load
 
-### Service Provider Networks
-- Integration with headend management systems
-- Coordinated updates across subscriber base
-- Analytics and reporting on update success rates
+## Monitoring and Diagnostics
 
-### Retail and Hospitality
-- Automated updates for displays and kiosks
-- Minimal disruption during business hours
-- Remote management of distributed devices
+### Operational Monitoring
+- **Progress Tracking**: Detailed progress reporting throughout update lifecycle
+- **Error Reporting**: Comprehensive error classification and reporting
+- **Performance Metrics**: Update timing and success rate tracking
+- **System Health**: Integration with device health monitoring systems
 
-### Smart Home Environments
-- Automatic security and feature updates
-- Coordination with home automation systems
-- User notification and scheduling preferences
+### Debugging Support
+- **Verbose Logging**: Detailed operation logging for troubleshooting
+- **State Inspection**: Real-time state and configuration inspection
+- **Test Interfaces**: Specialized interfaces for testing and validation
+- **Diagnostic Commands**: Built-in diagnostic and verification commands
 
-## Quality Assurance
+## Configuration Management
 
-### Testing Framework
-- **Unit Tests (L1)**: Core functionality validation
-- **Integration Tests (L2)**: End-to-end system testing
-- **Mock Infrastructure**: Comprehensive test coverage without hardware dependencies
+### Build-Time Configuration
+- **Feature Selection**: Compile-time feature enablement
+- **Platform Adaptation**: Platform-specific build configurations
+- **Security Settings**: Security policy enforcement configuration
+- **Performance Tuning**: Performance optimization settings
 
-### Validation Process
-- **Pre-deployment Testing**: Firmware validation before distribution
-- **Staged Rollouts**: Gradual deployment with monitoring
-- **Rollback Procedures**: Quick recovery from problematic updates
-
-The FirmwareUpdate plugin represents an enterprise-grade solution for device lifecycle management, combining security, reliability, and ease of use to meet the demands of modern connected device ecosystems.
+### Runtime Configuration
+- **Dynamic Settings**: Runtime-configurable behavior parameters
+- **Policy Management**: Configurable security and operational policies
+- **Feature Flags**: Runtime feature enablement/disablement
+- **Resource Limits**: Configurable resource usage constraints
