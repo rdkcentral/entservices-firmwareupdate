@@ -30,6 +30,7 @@ add_definitions (-DUSE_IARMBUS)
 add_definitions (-DUSE_TR_69)
 
 add_definitions (-DHAS_API_SYSTEM)
+ add_definitions (-DDISABLE_SECAPI)
 
 if (BUILD_DBUS)
     message("Building for DBUS")
