@@ -1515,7 +1515,7 @@ std::string readProperty( std::string filename,std::string property, std::string
         }
     }
 
-    SWUPDATEERR("Error: Property not found:: %s",property.c_str());
+    SWUPDATEERR("Error: Property not found:: %s");
     return "";
 }
 
