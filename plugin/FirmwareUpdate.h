@@ -59,10 +59,12 @@ namespace Plugin {
 
                     void Activated(RPC::IRemoteConnection*) override
                     {
+                        LOGINFO("FirmwareUpdate Notification Activated");
                     }
 
                 void Deactivated(RPC::IRemoteConnection *connection) override
                 {
+                    LOGINFO("FirmwareUpdate Notification Deactivated");
                     _parent.Deactivated(connection);
                 }
 
