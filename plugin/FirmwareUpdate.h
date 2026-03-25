@@ -59,13 +59,18 @@ namespace Plugin {
 
                     void Activated(RPC::IRemoteConnection*) override
                     {
-                        LOGINFO("FirmwareUpdate Notification Activated");
+                        if(_parent._connectionId == connection->Id())
+                        {
+                            LOGINFO("FirmwareUpdate Notification Activated");
+                        }
                     }
 
                 void Deactivated(RPC::IRemoteConnection *connection) override
                 {
-                    LOGINFO("FirmwareUpdate Notification Deactivated");
-                    _parent.Deactivated(connection);
+                    {
+                        LOGINFO("FirmwareUpdate Notification Deactivated");
+                        _parent.Deactivated(connection);
+                    }
                 }
 
                 void OnUpdateStateChange (const WPEFramework::Exchange::IFirmwareUpdate::State state , const WPEFramework::Exchange::IFirmwareUpdate::SubState substate) override
