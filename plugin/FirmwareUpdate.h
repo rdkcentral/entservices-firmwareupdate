@@ -69,8 +69,8 @@ namespace Plugin {
                 {
                     {
                         LOGINFO("FirmwareUpdate Notification Deactivated");
-                        _parent.Deactivated(connection);
                     }
+                    _parent.Deactivated(connection);
                 }
 
                 void OnUpdateStateChange (const WPEFramework::Exchange::IFirmwareUpdate::State state , const WPEFramework::Exchange::IFirmwareUpdate::SubState substate) override
