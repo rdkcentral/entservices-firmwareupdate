@@ -67,6 +67,7 @@ namespace Plugin {
 
                 void Deactivated(RPC::IRemoteConnection *connection) override
                 {
+                    if(_parent._connectionId == connection->Id())
                     {
                         LOGINFO("FirmwareUpdate Notification Deactivated");
                     }
