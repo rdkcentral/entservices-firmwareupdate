@@ -51,9 +51,6 @@ add_library(${PLUGIN_IMPLEMENTATION} SHARED
     FirmwareUpdateImplementation.cpp
     Module.cpp)
 
-include_directories(
-   ../helpers)
-
 set_target_properties(${PLUGIN_IMPLEMENTATION} PROPERTIES
         CXX_STANDARD 11
         CXX_STANDARD_REQUIRED YES)
