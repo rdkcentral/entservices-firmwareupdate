@@ -168,8 +168,8 @@ public:
                                           const Exchange::IFirmwareUpdate::SubState substate), (override));
     MOCK_METHOD(void, OnFlashingStateChange, (const uint32_t percentageComplete), (override));
 
-    void AddRef() const override {
-        m_refCount.fetch_add(1, std::memory_order_relaxed);
+    uint32_t AddRef() const override {
+        return m_refCount.fetch_add(1, std::memory_order_relaxed);
     }
 
     uint32_t Release() const override {
