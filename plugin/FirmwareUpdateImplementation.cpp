@@ -370,7 +370,8 @@ namespace WPEFramework {
                 server_url = "empty";
             }
 
-            if ( ((strcmp(proto, "usb") == 0) && server_url == NULL) || upgrade_file == NULL || reboot_flag == NULL || proto == NULL || maint == NULL) {
+            //coverity fix: REVERSE_INULL - server_url already checked and assigned, so check against "empty" instead of NULL
+            if ( ((strcmp(proto, "usb") == 0) && strcmp(server_url, "empty") == 0) || upgrade_file == NULL || reboot_flag == NULL || proto == NULL || maint == NULL) {
                 SWUPDATEERR("%s : Parametr is NULL\n", __FUNCTION__);
                 return ret;
             }
