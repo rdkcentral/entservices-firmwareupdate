@@ -370,9 +370,13 @@ namespace WPEFramework {
                 server_url = "empty";
             }
 
-            //coverity fix: REVERSE_INULL - server_url already checked and assigned, so check against "empty" instead of NULL
-            if (upgrade_file == NULL || reboot_flag == NULL || proto == NULL || maint == NULL || ((strcmp(proto, "usb") == 0) && strcmp(server_url, "empty") == 0)) {
-                SWUPDATEERR("%s : Parameter is NULL\n", __FUNCTION__);
+            if (upgrade_file == NULL || reboot_flag == NULL || proto == NULL || maint == NULL) {
+                SWUPDATEERR("%s : Required parameter is NULL\n", __FUNCTION__);
+                return ret;
+            }
+            
+            if (strcmp(proto, "usb") != 0 && strcmp(server_url, "empty") == 0) {
+                SWUPDATEERR("%s : server_url is required for non-USB protocols\n", __FUNCTION__);
                 return ret;
             }
             if (0 == ((strncmp(reboot_flag, "true", 4)))) {
