@@ -370,10 +370,11 @@ namespace WPEFramework {
                 server_url = "empty";
             }
 
-            if ( ((strcmp(proto, "usb") == 0) && server_url == NULL) || upgrade_file == NULL || reboot_flag == NULL || proto == NULL || maint == NULL) {
-                SWUPDATEERR("%s : Parametr is NULL\n", __FUNCTION__);
+            if (upgrade_file == NULL || reboot_flag == NULL || proto == NULL || maint == NULL || ((strcmp(proto, "usb") == 0) && server_url == NULL)) {
+                SWUPDATEERR("%s : Required parameter is NULL\n", __FUNCTION__);
                 return ret;
             }
+            
             if (0 == ((strncmp(reboot_flag, "true", 4)))) {
                 rflag = "1";
                 SWUPDATEINFO("reboot flag = %s\n", rflag);
