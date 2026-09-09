@@ -29,7 +29,11 @@ namespace WPEFramework {
 
         FirmwareUpdateImplementation::FirmwareUpdateImplementation()
             : _adminLock(),
-            mShell(nullptr)
+            mShell(nullptr),
+            _powerModeClientId(0),
+            _powerModeClientRegistered(false),
+            _pendingPowerTransactionId(-1),
+            _powerModeNotification(this)
         {
             LOGINFO("Create FirmwareUpdateImplementation Instance");
 
@@ -61,8 +65,125 @@ namespace WPEFramework {
                 LOGINFO("flashThread is still running or joinable. Joining now...");
                 flashThread.join();  // Ensure the thread has completed before main exits
             }
+            unregisterPowerManager();
             mShell = nullptr;
             DeinitializeIARM();
+        }
+
+        void FirmwareUpdateImplementation::PowerModeNotification::OnPowerModePreChange(
+            const Exchange::IPowerManager::PowerState currentState,
+            const Exchange::IPowerManager::PowerState newState, const int transactionId,
+            const int stateChangeAfter)
+        {
+            _parent->handlePowerModePreChange(currentState, newState, transactionId, stateChangeAfter);
+        }
+
+        void FirmwareUpdateImplementation::registerPowerManager()
+        {
+            SWUPDATEINFO("GSK: registerPowerManager entry mShell=%p existingRef=%d", mShell, static_cast<int>(static_cast<bool>(_powerManager)));
+            if (mShell == nullptr || _powerManager) {
+                return;
+            }
+
+            _powerManager = PowerManagerInterfaceBuilder(_T("org.rdk.PowerManager"))
+                                .withIShell(mShell)
+                                .withRetryIntervalMS(200)
+                                .withRetryCount(25)
+                                .createInterface();
+            if (!_powerManager) {
+                SWUPDATEERR("GSK: Failed to get PowerManager instance");
+                return;
+            }
+
+            auto* preChange = _powerModeNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>();
+            Core::hresult regRc = _powerManager->Register(preChange);
+            Core::hresult addRc = (regRc == Core::ERROR_NONE)
+                ? _powerManager->AddPowerModePreChangeClient("FirmwareUpdate", _powerModeClientId)
+                : Core::ERROR_GENERAL;
+            if (regRc != Core::ERROR_NONE || addRc != Core::ERROR_NONE) {
+                SWUPDATEERR("GSK: PowerManager register failed regRc=%u addRc=%u", regRc, addRc);
+                unregisterPowerManager();
+                return;
+            }
+            _powerModeClientRegistered = true;
+            SWUPDATEINFO("GSK: PowerManager pre-change client registered id=%u", _powerModeClientId);
+        }
+
+        void FirmwareUpdateImplementation::unregisterPowerManager()
+        {
+            SWUPDATEINFO("GSK: unregisterPowerManager entry hasRef=%d clientRegistered=%d clientId=%u",
+                static_cast<int>(static_cast<bool>(_powerManager)), _powerModeClientRegistered, _powerModeClientId);
+            if (!_powerManager) {
+                return;
+            }
+
+            if (_powerModeClientRegistered) {
+                _powerManager->RemovePowerModePreChangeClient(_powerModeClientId);
+                _powerModeClientRegistered = false;
+            }
+            _powerManager->Unregister(_powerModeNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+            _powerManager.Reset();
+        }
+
+        void FirmwareUpdateImplementation::handlePowerModePreChange(
+            const Exchange::IPowerManager::PowerState currentState,
+            const Exchange::IPowerManager::PowerState newState, const int transactionId,
+            const int stateChangeAfter)
+        {
+            SWUPDATEINFO("GSK: OnPowerModePreChange cur=%d new=%d txnId=%d timeout=%d flashing=%d clientRegistered=%d",
+                currentState, newState, transactionId, stateChangeAfter,
+                isFlashingInProgress.load(), _powerModeClientRegistered);
+
+            const bool enteringDeepSleep =
+                (newState == Exchange::IPowerManager::PowerState::POWER_STATE_STANDBY_DEEP_SLEEP) &&
+                (currentState == Exchange::IPowerManager::PowerState::POWER_STATE_STANDBY ||
+                 currentState == Exchange::IPowerManager::PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+
+            if (!enteringDeepSleep || !_powerModeClientRegistered) {
+                SWUPDATEINFO("GSK: Skipping pre-change (not target transition or not registered)");
+                return;
+            }
+
+            if (isFlashingInProgress.load()) {
+                {
+                    std::lock_guard<std::mutex> lock(_powerModeMutex);
+                    _pendingPowerTransactionId = transactionId;
+                }
+                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 630);
+                SWUPDATEINFO("GSK: Deferred deepsleep 630s for flash txnId=%d", transactionId);
+            } else {
+                SWUPDATEINFO("GSK: No flash in progress -> ack deepsleep txnId=%d", transactionId);
+                _powerManager->PowerModePreChangeComplete(_powerModeClientId, transactionId);
+            }
+        }
+
+        void FirmwareUpdateImplementation::completePowerModeChange(bool reboot)
+        {
+            int transactionId = -1;
+            {
+                std::lock_guard<std::mutex> lock(_powerModeMutex);
+                transactionId = _pendingPowerTransactionId;
+                if (!reboot) {
+                    _pendingPowerTransactionId = -1;
+                }
+            }
+            SWUPDATEINFO("GSK: completePowerModeChange reboot=%d pendingTxnId=%d clientRegistered=%d hasRef=%d",
+                reboot, transactionId, _powerModeClientRegistered,
+                static_cast<int>(static_cast<bool>(_powerManager)));
+
+            // Only act on a deferred transition. Never force deep sleep on our own.
+            if (transactionId < 0 || !_powerManager || !_powerModeClientRegistered) {
+                SWUPDATEINFO("GSK: completePowerModeChange no-op (no deferred transition)");
+                return;
+            }
+
+            if (reboot) {
+                SWUPDATEINFO("GSK: Holding deepsleep 630s for reboot txnId=%d", transactionId);
+                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 630);
+            } else {
+                SWUPDATEINFO("GSK: Acking deepsleep transition txnId=%d", transactionId);
+                _powerManager->PowerModePreChangeComplete(_powerModeClientId, transactionId);
+            }
         }
 
         void FirmwareUpdateImplementation::InitializeIARM()
@@ -441,6 +562,7 @@ namespace WPEFramework {
 
                 // Reset flashing status
                 isFlashingInProgress = false;
+                SWUPDATEINFO("GSK: imageFlasher.sh returned ret=%d proto=%s upgrade_type=%d", ret, proto, upgrade_type);
 
                 // Wait for the timer thread to complete
                 if (timerThread.joinable()) timerThread.join();
@@ -481,6 +603,8 @@ namespace WPEFramework {
                 {                    
                     updateUpgradeFlag(0,2);
                 }
+                SWUPDATEINFO("GSK: Failure branch -> release deferred deepsleep (if any)");
+                completePowerModeChange(false);
 
             } else if (true == mediaclient) {                
                 SWUPDATEINFO("Image Flashing is success\n");
@@ -514,11 +638,31 @@ namespace WPEFramework {
 
                     dispatchAndUpdateEvent(_FLASHING_SUCCEEDED,"");
                     dispatchAndUpdateEvent(_WAITING_FOR_REBOOT,"");
+                    SWUPDATEINFO("GSK: USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
+                    if (strncmp(reboot_flag, "true", 4) == 0 && upgrade_type != PDRI_UPGRADE) {
+                        SWUPDATEINFO("GSK: USB success + reboot=true -> hold deepsleep 630s then postFlash");
+                        completePowerModeChange(true);
+                        postFlash(maint, file+1, upgrade_type, reboot_flag, initiated_type);
+                    } else {
+                        SWUPDATEINFO("GSK: USB success + reboot=false/PDRI -> ack deferred deepsleep");
+                        completePowerModeChange(false);
+                    }
                 }	
                 else
                 {
+                    SWUPDATEINFO("GSK: non-USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
+                    if (strncmp(reboot_flag, "true", 4) == 0 && upgrade_type != PDRI_UPGRADE) {
+                        SWUPDATEINFO("GSK: non-USB success + reboot=true -> hold deepsleep 630s");
+                        completePowerModeChange(true);
+                    }
+                    SWUPDATEINFO("GSK: Entering postFlash");
                     postFlash(maint, file+1, upgrade_type, reboot_flag ,initiated_type);
+                    SWUPDATEINFO("GSK: postFlash returned");
                     dispatchAndUpdateEvent(_FLASHING_SUCCEEDED,"");
+                    if (strncmp(reboot_flag, "true", 4) != 0 || upgrade_type == PDRI_UPGRADE) {
+                        SWUPDATEINFO("GSK: non-USB success + reboot=false/PDRI -> ack deferred deepsleep");
+                        completePowerModeChange(false);
+                    }
                 }
 
                 if(std::string(initiated_type) == "device")
@@ -530,6 +674,8 @@ namespace WPEFramework {
                 snprintf(fwdls.status, sizeof(fwdls.status), "Status|Download complete\n");
                 snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Download complete\n");
                 snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|");
+                SWUPDATEINFO("GSK: Non-mediaclient success -> release deferred deepsleep");
+                completePowerModeChange(false);
             }
 
             if (Utils::fileExists(headerinfofile)) {
@@ -586,9 +732,11 @@ namespace WPEFramework {
         uint32_t FirmwareUpdateImplementation::Configure(PluginHost::IShell* shell)
         {
             LOGINFO("Configuring FirmwareUpdateImplementation");
+            SWUPDATEINFO("GSK: Configure invoked shell=%p", shell);
             uint32_t result = Core::ERROR_NONE;
             ASSERT(shell != nullptr);
             mShell = shell;
+            registerPowerManager();
             return result;
         }
 
@@ -663,7 +811,13 @@ namespace WPEFramework {
 
 
             const char *server_url ="";
-            const char *reboot_flag = "false";
+            char rebootFlag[16] = "false";
+            char rfcType[] = "thunderapi";
+            if (read_RFCProperty(rfcType, TR181_AUTOREBOOT_ENABLE, rebootFlag, sizeof(rebootFlag)) != READ_RFC_SUCCESS) {
+                snprintf(rebootFlag, sizeof(rebootFlag), "false");
+            }
+            const char *reboot_flag = rebootFlag;
+            SWUPDATEINFO("GSK: flashImageThread reboot_flag(RFC)=%s firmwareType=%s", reboot_flag, firmwareType.c_str());
             const char *proto = "usb";
             const char *maint = "false";
             const char *initiated_type = "user";
@@ -685,6 +839,8 @@ namespace WPEFramework {
                     snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
                     snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|File copy operation failed.\n");
                     updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type);
+                    SWUPDATEINFO("GSK: USB copy failed early -> release deferred deepsleep");
+                    completePowerModeChange(false);
 
                     return ;
                 }
@@ -804,6 +960,7 @@ namespace WPEFramework {
             flashThread = std::thread(&WPEFramework::Plugin::FirmwareUpdateImplementation::flashImageThread, this, firmwareFilepath, firmwareType);
             result.success = true;
             status =Core::ERROR_NONE;
+            SWUPDATEINFO("GSK: UpdateFirmware started flash thread path=%s type=%s", firmwareFilepath.c_str(), firmwareType.c_str());
 
             return status;
         }
