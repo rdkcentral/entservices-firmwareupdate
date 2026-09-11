@@ -151,6 +151,8 @@ namespace Plugin {
             const Exchange::IPowerManager::PowerState newState, const int transactionId,
             const int stateChangeAfter);
         void completePowerModeChange(bool reboot);
+        void startPowerModeKeepAlive(int transactionId);
+        void stopPowerModeKeepAlive();
 
         mutable Core::CriticalSection _adminLock;
         std::list<Exchange::IFirmwareUpdate::INotification*> _FirmwareUpdateNotification;
@@ -160,6 +162,8 @@ namespace Plugin {
         bool _powerModeClientRegistered;
         int _pendingPowerTransactionId;
         std::mutex _powerModeMutex;
+        std::atomic<bool> _powerModeKeepAliveRun;
+        std::thread _powerModeKeepAliveThread;
         // Core::Sink prevents deletion when PowerManager releases its reference.
         Core::Sink<PowerModeNotification> _powerModeNotification;
         
