@@ -257,48 +257,26 @@ TEST_F(FirmwareUpdateTest,FirmwareUpdate_with_imageFlasher)
 
 TEST_F(FirmwareUpdateTest,RejectsSensitivePath)
 {
-    std::ofstream file("/etc/test_firmware.bin");
-    
-    uint32_t status = Core::ERROR_GENERAL;
     JsonObject params;
     JsonObject result;
+    params["firmwareFilepath"] = "/etc/passwd";
+    params["firmwareType"] = "PCI";
 
-    if (file.is_open()) {
-        file << "test firmware";
-        file.close();
-        
-        params["firmwareFilepath"] = "/etc/test_firmware.bin";
-        params["firmwareType"] = "PCI";
+    const uint32_t status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
 
-        status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
-        
-        EXPECT_NE(status, Core::ERROR_NONE);
-        
-        unlink("/etc/test_firmware.bin");
-    }
+    EXPECT_NE(status, Core::ERROR_NONE);
 }
 
 TEST_F(FirmwareUpdateTest,RejectsPathTraversal)
 {
-    std::ofstream file("/tmp/test_firmware.bin");
-    
-    uint32_t status = Core::ERROR_GENERAL;
     JsonObject params;
     JsonObject result;
+    params["firmwareFilepath"] = "/tmp/../etc/passwd";
+    params["firmwareType"] = "PCI";
 
-    if (file.is_open()) {
-        file << "test firmware";
-        file.close();
-        
-        params["firmwareFilepath"] = "/tmp/../etc/test_firmware.bin";
-        params["firmwareType"] = "PCI";
+    const uint32_t status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
 
-        status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
-        
-        EXPECT_NE(status, Core::ERROR_NONE);
-        
-        unlink("/tmp/test_firmware.bin");
-    }
+    EXPECT_NE(status, Core::ERROR_NONE);
 }
 
 TEST_F(FirmwareUpdateTest,RejectsSymlink)

@@ -31,49 +31,53 @@ void startProgressTimer() ;
 namespace WPEFramework {
     namespace Plugin {
 
-        bool FirmwareUpdateImplementation::isValidFirmwarePath(const std::string& filepath, std::string& errorReason)
+        bool FirmwareUpdateImplementation::isValidFirmwarePath(const std::string& filepath, std::string& canonicalPath, std::string& errorReason)
         {
-            // Canonicalize the path to prevent traversal
+            struct stat pathInfo;
+            if (lstat(filepath.c_str(), &pathInfo) != 0)
+            {
+                errorReason = "Firmware path does not exist";
+                return false;
+            }
+            if (S_ISLNK(pathInfo.st_mode))
+            {
+                errorReason = "Symlinks are not allowed for firmware paths";
+                return false;
+            }
+
             char resolved[PATH_MAX];
             if (realpath(filepath.c_str(), resolved) == nullptr)
             {
-                errorReason = "Invalid firmware path: cannot resolve";
+                errorReason = "Firmware path cannot be resolved";
                 return false;
             }
-            std::string canonicalPath(resolved);
+            canonicalPath.assign(resolved);
 
-            // Restrict to safe firmware directories
-            // Allow: /tmp/, /opt/, /var/tmp/, and current working directory
-            // Reject: /etc/, /var/, /usr/, /boot/, /dev/, /sys/, /proc/, /root/, /home/
-            
             const char* safePrefixes[] = {
                 "/tmp/",
                 "/opt/",
-                "/var/tmp/",
-                "."
+                "/var/tmp/"
             };
-            
+
             bool isSafe = false;
             for (const char* prefix : safePrefixes)
             {
-                if (canonicalPath.find(prefix) == 0)
+                if (canonicalPath.compare(0, strlen(prefix), prefix) == 0)
                 {
                     isSafe = true;
                     break;
                 }
             }
-            
+
             if (!isSafe)
             {
-                errorReason = "Firmware path must be in /tmp/, /opt/, /var/tmp/, or current directory";
+                errorReason = "Firmware path must be in /tmp/, /opt/, or /var/tmp/";
                 return false;
             }
 
-            // Reject symlinks that point outside safe directories
-            struct stat st;
-            if (lstat(filepath.c_str(), &st) == 0 && S_ISLNK(st.st_mode))
+            if (stat(canonicalPath.c_str(), &pathInfo) != 0 || !S_ISREG(pathInfo.st_mode))
             {
-                errorReason = "Symlinks are not allowed for firmware paths";
+                errorReason = "Firmware path must refer to a regular file";
                 return false;
             }
 
@@ -779,8 +783,9 @@ namespace WPEFramework {
             }
 
             // Validate firmware path before processing
+            std::string canonicalFirmwarePath;
             std::string pathError;
-            if (!isValidFirmwarePath(firmwareFilepath, pathError))
+            if (!isValidFirmwarePath(firmwareFilepath, canonicalFirmwarePath, pathError))
             {
                 SWUPDATEERR("Invalid firmware path: %s", pathError.c_str());
                 snprintf(fwdls.status, sizeof(fwdls.status), "Status|Failure\n");
@@ -791,16 +796,6 @@ namespace WPEFramework {
                 return status;
             }
 
-            else if (!(Utils::fileExists(firmwareFilepath.c_str()))) {
-                SWUPDATEERR("firmwareFile is not present %s",firmwareFilepath.c_str());
-                SWUPDATEERR("Local image Download Failed"); //Existing marker
-                snprintf(fwdls.status, sizeof(fwdls.status), "Status|Failure\n");
-                snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
-                snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|firmwareFile is not present\n");
-                updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type.c_str());
-                status = Core::ERROR_INVALID_PARAMETER;
-                return status;
-            }
 
             if(firmwareType !=""){
                 if (firmwareType != "PCI" && firmwareType != "DRI") {
@@ -824,8 +819,8 @@ namespace WPEFramework {
                 return status;
             }
 
-            string name = firmwareFilepath.substr(firmwareFilepath.find_last_of("/\\") + 1);
-            string path = firmwareFilepath.substr(0, firmwareFilepath.find_last_of("/\\") + 1);
+            string name = canonicalFirmwarePath.substr(canonicalFirmwarePath.find_last_of("/\\") + 1);
+            string path = canonicalFirmwarePath.substr(0, canonicalFirmwarePath.find_last_of("/\\") + 1);
 
             string currentFlashedImage = readProperty("/version.txt","imagename", ":") ;
             SWUPDATEINFO("currentFlashedImage : %s",currentFlashedImage.c_str());
@@ -870,7 +865,7 @@ namespace WPEFramework {
                 flashThread.join();  // Ensure the thread has completed before main exits
             }
             // Start a new flashing thread
-            flashThread = std::thread(&WPEFramework::Plugin::FirmwareUpdateImplementation::flashImageThread, this, firmwareFilepath, firmwareType);
+            flashThread = std::thread(&WPEFramework::Plugin::FirmwareUpdateImplementation::flashImageThread, this, canonicalFirmwarePath, firmwareType);
             result.success = true;
             status =Core::ERROR_NONE;
 
