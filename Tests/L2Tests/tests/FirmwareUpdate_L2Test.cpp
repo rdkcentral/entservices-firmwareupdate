@@ -254,3 +254,74 @@ TEST_F(FirmwareUpdateTest,FirmwareUpdate_with_imageFlasher)
         sleep(10);
     }
 }
+
+TEST_F(FirmwareUpdateTest,RejectsSensitivePath)
+{
+    std::ofstream file("/etc/test_firmware.bin");
+    
+    uint32_t status = Core::ERROR_GENERAL;
+    JsonObject params;
+    JsonObject result;
+
+    if (file.is_open()) {
+        file << "test firmware";
+        file.close();
+        
+        params["firmwareFilepath"] = "/etc/test_firmware.bin";
+        params["firmwareType"] = "PCI";
+
+        status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
+        
+        EXPECT_NE(status, Core::ERROR_NONE);
+        
+        unlink("/etc/test_firmware.bin");
+    }
+}
+
+TEST_F(FirmwareUpdateTest,RejectsPathTraversal)
+{
+    std::ofstream file("/tmp/test_firmware.bin");
+    
+    uint32_t status = Core::ERROR_GENERAL;
+    JsonObject params;
+    JsonObject result;
+
+    if (file.is_open()) {
+        file << "test firmware";
+        file.close();
+        
+        params["firmwareFilepath"] = "/tmp/../etc/test_firmware.bin";
+        params["firmwareType"] = "PCI";
+
+        status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
+        
+        EXPECT_NE(status, Core::ERROR_NONE);
+        
+        unlink("/tmp/test_firmware.bin");
+    }
+}
+
+TEST_F(FirmwareUpdateTest,RejectsSymlink)
+{
+    std::ofstream file("/tmp/test_firmware.bin");
+    symlink("/etc/passwd", "/tmp/symlink_firmware.bin");
+    
+    uint32_t status = Core::ERROR_GENERAL;
+    JsonObject params;
+    JsonObject result;
+
+    if (file.is_open()) {
+        file << "test firmware";
+        file.close();
+        
+        params["firmwareFilepath"] = "/tmp/symlink_firmware.bin";
+        params["firmwareType"] = "PCI";
+
+        status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
+        
+        EXPECT_NE(status, Core::ERROR_NONE);
+        
+        unlink("/tmp/test_firmware.bin");
+        unlink("/tmp/symlink_firmware.bin");
+    }
+}

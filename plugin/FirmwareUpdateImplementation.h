@@ -126,6 +126,8 @@ namespace Plugin {
         
         void InitializeIARM();
         void DeinitializeIARM();
+        
+        static bool isValidFirmwarePath(const std::string& filepath, std::string& errorReason);
 
         friend class Job;
     };

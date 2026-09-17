@@ -19,12 +19,67 @@
 
 #include "FirmwareUpdateImplementation.h"
 
+#include <sys/stat.h>
+#include <unistd.h>
+#include <limits.h>
+
 std::atomic<bool> isFlashingInProgress(false);
 std::mutex flashMutex;
 std::mutex logMutex;
 void startProgressTimer() ;
+
 namespace WPEFramework {
     namespace Plugin {
+
+        bool FirmwareUpdateImplementation::isValidFirmwarePath(const std::string& filepath, std::string& errorReason)
+        {
+            // Canonicalize the path to prevent traversal
+            char resolved[PATH_MAX];
+            if (realpath(filepath.c_str(), resolved) == nullptr)
+            {
+                errorReason = "Invalid firmware path: cannot resolve";
+                return false;
+            }
+            std::string canonicalPath(resolved);
+
+            // Restrict to safe firmware directories
+            // Allow: /tmp/, /opt/, /var/tmp/, and current working directory
+            // Reject: /etc/, /var/, /usr/, /boot/, /dev/, /sys/, /proc/, /root/, /home/
+            
+            const char* safePrefixes[] = {
+                "/tmp/",
+                "/opt/",
+                "/var/tmp/",
+                "."
+            };
+            
+            bool isSafe = false;
+            for (const char* prefix : safePrefixes)
+            {
+                if (canonicalPath.find(prefix) == 0)
+                {
+                    isSafe = true;
+                    break;
+                }
+            }
+            
+            if (!isSafe)
+            {
+                errorReason = "Firmware path must be in /tmp/, /opt/, /var/tmp/, or current directory";
+                return false;
+            }
+
+            // Reject symlinks that point outside safe directories
+            struct stat st;
+            if (lstat(filepath.c_str(), &st) == 0 && S_ISLNK(st.st_mode))
+            {
+                errorReason = "Symlinks are not allowed for firmware paths";
+                return false;
+            }
+
+            return true;
+        }
+
         SERVICE_REGISTRATION(FirmwareUpdateImplementation, 1, 0);
 
         FirmwareUpdateImplementation::FirmwareUpdateImplementation()
@@ -722,6 +777,20 @@ namespace WPEFramework {
                 status = Core::ERROR_INVALID_PARAMETER;
                 return status;
             }
+
+            // Validate firmware path before processing
+            std::string pathError;
+            if (!isValidFirmwarePath(firmwareFilepath, pathError))
+            {
+                SWUPDATEERR("Invalid firmware path: %s", pathError.c_str());
+                snprintf(fwdls.status, sizeof(fwdls.status), "Status|Failure\n");
+                snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
+                snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|%s\n", pathError.c_str());
+                updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type.c_str());
+                status = Core::ERROR_INVALID_PARAMETER;
+                return status;
+            }
+
             else if (!(Utils::fileExists(firmwareFilepath.c_str()))) {
                 SWUPDATEERR("firmwareFile is not present %s",firmwareFilepath.c_str());
                 SWUPDATEERR("Local image Download Failed"); //Existing marker
