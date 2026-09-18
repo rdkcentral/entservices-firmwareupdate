@@ -151,7 +151,7 @@ extern std::mutex logMutex;
         pid_t tid = syscall(SYS_gettid); \
         std::string timestamp = GetCurrentTimestamp(); \
         logFile << timestamp << " " \
-                << "FirmwareUpdate WPEFramework[" << pid << "]: [" << tid << "] INFO [" \
+                << "FirmwareUpdate Thunder[" << pid << "]: [" << tid << "] INFO [" \
                 << filename_ << ":" << __LINE__ << "] " \
                 << __FUNCTION__ << ": "; \
         char buffer[1024]; \
@@ -172,7 +172,7 @@ extern std::mutex logMutex;
         pid_t tid = syscall(SYS_gettid); \
         std::string timestamp = GetCurrentTimestamp(); \
         logFile << timestamp << " " \
-                << "FirmwareUpdate WPEFramework[" << pid << "]: [" << tid << "] ERROR [" \
+                << "FirmwareUpdate Thunder[" << pid << "]: [" << tid << "] ERROR [" \
                 << filename_ << ":" << __LINE__ << "] " \
                 << __FUNCTION__ << ": "; \
         char buffer[1024]; \
@@ -184,25 +184,25 @@ extern std::mutex logMutex;
     } \
 } while (0)
 
-std::map<std::string, WPEFramework::Exchange::IFirmwareUpdate::State> firmwareState = {
-    {"VALIDATION_FAILED", WPEFramework::Exchange::IFirmwareUpdate::State::VALIDATION_FAILED},
-    {"FLASHING_STARTED", WPEFramework::Exchange::IFirmwareUpdate::State::FLASHING_STARTED},
-    {"FLASHING_FAILED", WPEFramework::Exchange::IFirmwareUpdate::State::FLASHING_FAILED},
-    {"FLASHING_SUCCEEDED", WPEFramework::Exchange::IFirmwareUpdate::State::FLASHING_SUCCEEDED},
-    {"WAITING_FOR_REBOOT", WPEFramework::Exchange::IFirmwareUpdate::State::WAITING_FOR_REBOOT}
+std::map<std::string, Thunder::Exchange::IFirmwareUpdate::State> firmwareState = {
+    {"VALIDATION_FAILED", Thunder::Exchange::IFirmwareUpdate::State::VALIDATION_FAILED},
+    {"FLASHING_STARTED", Thunder::Exchange::IFirmwareUpdate::State::FLASHING_STARTED},
+    {"FLASHING_FAILED", Thunder::Exchange::IFirmwareUpdate::State::FLASHING_FAILED},
+    {"FLASHING_SUCCEEDED", Thunder::Exchange::IFirmwareUpdate::State::FLASHING_SUCCEEDED},
+    {"WAITING_FOR_REBOOT", Thunder::Exchange::IFirmwareUpdate::State::WAITING_FOR_REBOOT}
 };
 
-std::map<std::string, WPEFramework::Exchange::IFirmwareUpdate::SubState> firmwareSubState = {
-    {"NOT_APPLICABLE", WPEFramework::Exchange::IFirmwareUpdate::SubState::NOT_APPLICABLE},
-    {"FIRMWARE_NOT_FOUND", WPEFramework::Exchange::IFirmwareUpdate::SubState::FIRMWARE_NOT_FOUND},
-    {"FIRMWARE_INVALID", WPEFramework::Exchange::IFirmwareUpdate::SubState::FIRMWARE_INVALID},
-    {"FIRMWARE_OUTDATED", WPEFramework::Exchange::IFirmwareUpdate::SubState::FIRMWARE_OUTDATED},
-    {"FIRMWARE_UPTODATE", WPEFramework::Exchange::IFirmwareUpdate::SubState::FIRMWARE_UPTODATE},
-    {"FIRMWARE_INCOMPATIBLE", WPEFramework::Exchange::IFirmwareUpdate::SubState::FIRMWARE_INCOMPATIBLE},
-    {"PREWRITE_SIGNATURE_CHECK_FAILED", WPEFramework::Exchange::IFirmwareUpdate::SubState::PREWRITE_SIGNATURE_CHECK_FAILED},
-    {"FLASH_WRITE_FAILED", WPEFramework::Exchange::IFirmwareUpdate::SubState::FLASH_WRITE_FAILED},
-    {"POSTWRITE_FIRMWARE_CHECK_FAILED", WPEFramework::Exchange::IFirmwareUpdate::SubState::POSTWRITE_FIRMWARE_CHECK_FAILED},
-    {"POSTWRITE_SIGNATURE_CHECK_FAILED", WPEFramework::Exchange::IFirmwareUpdate::SubState::POSTWRITE_SIGNATURE_CHECK_FAILED}
+std::map<std::string, Thunder::Exchange::IFirmwareUpdate::SubState> firmwareSubState = {
+    {"NOT_APPLICABLE", Thunder::Exchange::IFirmwareUpdate::SubState::NOT_APPLICABLE},
+    {"FIRMWARE_NOT_FOUND", Thunder::Exchange::IFirmwareUpdate::SubState::FIRMWARE_NOT_FOUND},
+    {"FIRMWARE_INVALID", Thunder::Exchange::IFirmwareUpdate::SubState::FIRMWARE_INVALID},
+    {"FIRMWARE_OUTDATED", Thunder::Exchange::IFirmwareUpdate::SubState::FIRMWARE_OUTDATED},
+    {"FIRMWARE_UPTODATE", Thunder::Exchange::IFirmwareUpdate::SubState::FIRMWARE_UPTODATE},
+    {"FIRMWARE_INCOMPATIBLE", Thunder::Exchange::IFirmwareUpdate::SubState::FIRMWARE_INCOMPATIBLE},
+    {"PREWRITE_SIGNATURE_CHECK_FAILED", Thunder::Exchange::IFirmwareUpdate::SubState::PREWRITE_SIGNATURE_CHECK_FAILED},
+    {"FLASH_WRITE_FAILED", Thunder::Exchange::IFirmwareUpdate::SubState::FLASH_WRITE_FAILED},
+    {"POSTWRITE_FIRMWARE_CHECK_FAILED", Thunder::Exchange::IFirmwareUpdate::SubState::POSTWRITE_FIRMWARE_CHECK_FAILED},
+    {"POSTWRITE_SIGNATURE_CHECK_FAILED", Thunder::Exchange::IFirmwareUpdate::SubState::POSTWRITE_SIGNATURE_CHECK_FAILED}
 };
 
 

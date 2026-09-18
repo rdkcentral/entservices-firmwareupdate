@@ -43,7 +43,7 @@
 #define FIRMWARE_UPDATE_STATE   "/tmp/FirmwareUpdateStatus.txt"
 
 using ::testing::NiceMock;
-using namespace WPEFramework;
+using namespace Thunder;
 
 namespace {
     const string callSign = _T("FirmwareUpdate");
@@ -2909,13 +2909,13 @@ TEST_F(FirmwareUpdateTest, Information_ReturnsValidString)
 TEST_F(FirmwareUpdateTest, OnJSONRPCError_ValidContext_ReturnsErrorCode)
 {
     // Test OnJSONRPCError static method
-    WPEFramework::Core::JSONRPC::Context context;
+    Thunder::Core::JSONRPC::Context context;
     std::string method = "updateFirmware";
     std::string parameters = "{\"firmwareFilepath\":\"/tmp/test.bin\",\"firmwareType\":\"PCI\"}";
     uint32_t errorcode = 1234;
     std::string errormessage;
     
-    uint32_t result = WPEFramework::Plugin::FirmwareUpdate::OnJSONRPCError(
+    uint32_t result = Thunder::Plugin::FirmwareUpdate::OnJSONRPCError(
         context, method, parameters, errorcode, errormessage);
     
     // Method should execute without crashing
@@ -2926,13 +2926,13 @@ TEST_F(FirmwareUpdateTest, OnJSONRPCError_ValidContext_ReturnsErrorCode)
 TEST_F(FirmwareUpdateTest, OnJSONRPCError_EmptyMethod_HandlesGracefully)
 {
     // Test OnJSONRPCError with empty method
-    WPEFramework::Core::JSONRPC::Context context;
+    Thunder::Core::JSONRPC::Context context;
     std::string method = "";
     std::string parameters = "{}";
     uint32_t errorcode = 500;
     std::string errormessage;
     
-    uint32_t result = WPEFramework::Plugin::FirmwareUpdate::OnJSONRPCError(
+    uint32_t result = Thunder::Plugin::FirmwareUpdate::OnJSONRPCError(
         context, method, parameters, errorcode, errormessage);
     
     // Should handle empty method gracefully
@@ -2942,13 +2942,13 @@ TEST_F(FirmwareUpdateTest, OnJSONRPCError_EmptyMethod_HandlesGracefully)
 TEST_F(FirmwareUpdateTest, OnJSONRPCError_InvalidJSON_HandlesGracefully)
 {
     // Test OnJSONRPCError with invalid JSON parameters
-    WPEFramework::Core::JSONRPC::Context context;
+    Thunder::Core::JSONRPC::Context context;
     std::string method = "updateFirmware";
     std::string parameters = "{invalid json}";
     uint32_t errorcode = 400;
     std::string errormessage;
     
-    uint32_t result = WPEFramework::Plugin::FirmwareUpdate::OnJSONRPCError(
+    uint32_t result = Thunder::Plugin::FirmwareUpdate::OnJSONRPCError(
         context, method, parameters, errorcode, errormessage);
     
     // Should handle invalid JSON gracefully
@@ -2958,23 +2958,23 @@ TEST_F(FirmwareUpdateTest, OnJSONRPCError_InvalidJSON_HandlesGracefully)
 // Consolidated OnJSONRPCError test covering all error scenarios
 TEST_F(FirmwareUpdateTest, OnJSONRPCError_ComprehensiveErrorHandling)
 {
-    WPEFramework::Core::JSONRPC::Context context;
+    Thunder::Core::JSONRPC::Context context;
     std::string errormessage;
     
     // Test with valid JSON
-    uint32_t result1 = WPEFramework::Plugin::FirmwareUpdate::OnJSONRPCError(
+    uint32_t result1 = Thunder::Plugin::FirmwareUpdate::OnJSONRPCError(
         context, "updateFirmware", "{\"valid\":\"json\"}", 400, errormessage);
     (void)result1;
     
     // Test with invalid JSON
-    uint32_t result2 = WPEFramework::Plugin::FirmwareUpdate::OnJSONRPCError(
+    uint32_t result2 = Thunder::Plugin::FirmwareUpdate::OnJSONRPCError(
         context, "updateFirmware", "{invalid json}", 400, errormessage);
     (void)result2;
     
     // Test with various error codes
     std::vector<uint32_t> errorCodes = {0, 1, 100, 404, 500, 999, 0xFFFFFFFF};
     for (uint32_t errorcode : errorCodes) {
-        uint32_t result = WPEFramework::Plugin::FirmwareUpdate::OnJSONRPCError(
+        uint32_t result = Thunder::Plugin::FirmwareUpdate::OnJSONRPCError(
             context, "testMethod", "{}", errorcode, errormessage);
         (void)result;
     }
@@ -2982,7 +2982,7 @@ TEST_F(FirmwareUpdateTest, OnJSONRPCError_ComprehensiveErrorHandling)
     // Test with special characters and long strings
     std::string longMethod(1000, 'a');
     std::string longParams(2000, 'b');
-    uint32_t result3 = WPEFramework::Plugin::FirmwareUpdate::OnJSONRPCError(
+    uint32_t result3 = Thunder::Plugin::FirmwareUpdate::OnJSONRPCError(
         context, longMethod, longParams, 123, errormessage);
     (void)result3;
 }
@@ -3003,7 +3003,7 @@ TEST_F(FirmwareUpdateTest, MultipleInstances_IndependentOperation)
 TEST_F(FirmwareUpdateTest, ErrorHandling_DifferentErrorCodes_ProcessCorrectly)
 {
     // Test error handling with different error codes
-    WPEFramework::Core::JSONRPC::Context context;
+    Thunder::Core::JSONRPC::Context context;
     std::string method = "testMethod";
     std::string parameters = "{}";
     std::string errormessage;
@@ -3012,7 +3012,7 @@ TEST_F(FirmwareUpdateTest, ErrorHandling_DifferentErrorCodes_ProcessCorrectly)
     std::vector<uint32_t> errorCodes = {0, 1, 100, 404, 500, 999, 0xFFFFFFFF};
     
     for (uint32_t errorcode : errorCodes) {
-        uint32_t result = WPEFramework::Plugin::FirmwareUpdate::OnJSONRPCError(
+        uint32_t result = Thunder::Plugin::FirmwareUpdate::OnJSONRPCError(
             context, method, parameters, errorcode, errormessage);
         
         // Should handle all error codes
@@ -3023,13 +3023,13 @@ TEST_F(FirmwareUpdateTest, ErrorHandling_DifferentErrorCodes_ProcessCorrectly)
 TEST_F(FirmwareUpdateTest, LongStrings_HandledCorrectly)
 {
     // Test with very long method names and parameters
-    WPEFramework::Core::JSONRPC::Context context;
+    Thunder::Core::JSONRPC::Context context;
     std::string method(1000, 'a'); // Very long method name
     std::string parameters(2000, 'b'); // Very long parameters
     uint32_t errorcode = 123;
     std::string errormessage;
     
-    uint32_t result = WPEFramework::Plugin::FirmwareUpdate::OnJSONRPCError(
+    uint32_t result = Thunder::Plugin::FirmwareUpdate::OnJSONRPCError(
         context, method, parameters, errorcode, errormessage);
     
     // Should handle long strings gracefully
@@ -3039,13 +3039,13 @@ TEST_F(FirmwareUpdateTest, LongStrings_HandledCorrectly)
 TEST_F(FirmwareUpdateTest, SpecialCharacters_HandledCorrectly)
 {
     // Test with special characters in method and parameters
-    WPEFramework::Core::JSONRPC::Context context;
+    Thunder::Core::JSONRPC::Context context;
     std::string method = "method_with_special_chars_!@#$%^&*()";
     std::string parameters = "{\"key\":\"value with special chars: üñíçødé\"}";
     uint32_t errorcode = 456;
     std::string errormessage;
     
-    uint32_t result = WPEFramework::Plugin::FirmwareUpdate::OnJSONRPCError(
+    uint32_t result = Thunder::Plugin::FirmwareUpdate::OnJSONRPCError(
         context, method, parameters, errorcode, errormessage);
     
     // Should handle special characters gracefully

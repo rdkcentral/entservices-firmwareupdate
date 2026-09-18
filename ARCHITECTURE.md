@@ -1,7 +1,7 @@
 # FirmwareUpdate Plugin Architecture
 
 ## Overview
-The FirmwareUpdate plugin is a C++ implementation built on the WPEFramework (Thunder) platform that provides secure, reliable firmware update capabilities for RDK-based devices. It follows a layered architecture with clear separation of concerns between the plugin interface, business logic implementation, and system interaction layers.
+The FirmwareUpdate plugin is a C++ implementation built on the Thunder platform that provides secure, reliable firmware update capabilities for RDK-based devices. It follows a layered architecture with clear separation of concerns between the plugin interface, business logic implementation, and system interaction layers.
 
 ## System Architecture
 

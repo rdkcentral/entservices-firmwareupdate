@@ -23,7 +23,7 @@ std::atomic<bool> isFlashingInProgress(false);
 std::mutex flashMutex;
 std::mutex logMutex;
 void startProgressTimer() ;
-namespace WPEFramework {
+namespace Thunder {
     namespace Plugin {
         SERVICE_REGISTRATION(FirmwareUpdateImplementation, 1, 0);
 
@@ -144,8 +144,8 @@ namespace WPEFramework {
                                                     string strState = params["state"].String();
                                                     string strSubstate = params["substate"].String();
                                                     SWUPDATEINFO("onUpdateStateChange event triggred with state:%s substate:%s \n",strState.c_str(),strSubstate.c_str());
-                                                    WPEFramework::Exchange::IFirmwareUpdate::State state ;
-                                                    WPEFramework::Exchange::IFirmwareUpdate::SubState   substate = WPEFramework::Exchange::IFirmwareUpdate::SubState::NOT_APPLICABLE;
+                                                    Thunder::Exchange::IFirmwareUpdate::State state ;
+                                                    Thunder::Exchange::IFirmwareUpdate::SubState   substate = Thunder::Exchange::IFirmwareUpdate::SubState::NOT_APPLICABLE;
                                                     auto it = firmwareState.find(strState);
                                                     if (it != firmwareState.end()) {
                                                         state  = it->second;
@@ -434,7 +434,7 @@ namespace WPEFramework {
                 }
 
                 // Start a thread for progress updates
-                std::thread timerThread(&WPEFramework::Plugin::FirmwareUpdateImplementation::startProgressTimer, this);
+                std::thread timerThread(&Thunder::Plugin::FirmwareUpdateImplementation::startProgressTimer, this);
 	            dispatchAndUpdateEvent(_FLASHING_STARTED,"");
 
                 ret = v_secure_system("/lib/rdk/imageFlasher.sh '%s' '%s' '%s' '%s' '%s' '%s' >> /opt/logs/swupdate.log", proto, server_url, difw_path, file+1, rflag, uptype);
@@ -613,7 +613,7 @@ namespace WPEFramework {
 
                 if ((Utils::getServiceState(mShell, FACTORYPROTECT_CALLSIGN_VER, state) == Core::ERROR_NONE) && (state == PluginHost::IShell::state::ACTIVATED))
                 {
-                    std::shared_ptr<WPEFramework::JSONRPC::LinkType<WPEFramework::Core::JSON::IElement>> factoryProtectConnection = Utils::getThunderControllerClient(FACTORYPROTECT_CALLSIGN_VER);
+                    std::shared_ptr<Thunder::JSONRPC::LinkType<Thunder::Core::JSON::IElement>> factoryProtectConnection = Utils::getThunderControllerClient(FACTORYPROTECT_CALLSIGN_VER);
 
                     if (!factoryProtectConnection)
                     {
@@ -801,7 +801,7 @@ namespace WPEFramework {
                 flashThread.join();  // Ensure the thread has completed before main exits
             }
             // Start a new flashing thread
-            flashThread = std::thread(&WPEFramework::Plugin::FirmwareUpdateImplementation::flashImageThread, this, firmwareFilepath, firmwareType);
+            flashThread = std::thread(&Thunder::Plugin::FirmwareUpdateImplementation::flashImageThread, this, firmwareFilepath, firmwareType);
             result.success = true;
             status =Core::ERROR_NONE;
 
@@ -863,7 +863,7 @@ namespace WPEFramework {
         }
 
     } // namespace Plugin
-} // namespace WPEFramework
+} // namespace Thunder
 
 
 //Helper start

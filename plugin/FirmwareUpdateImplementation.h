@@ -33,7 +33,7 @@
 
 std::thread flashThread;
 
-namespace WPEFramework {
+namespace Thunder {
 namespace Plugin {
     class FirmwareUpdateImplementation : public Exchange::IFirmwareUpdate , public Exchange::IConfiguration{
 
@@ -130,4 +130,4 @@ namespace Plugin {
         friend class Job;
     };
 } // namespace Plugin
-} // namespace WPEFramework
+} // namespace Thunder

@@ -27,7 +27,7 @@
 #include "tracing/Logging.h"
 #include <mutex>
 
-namespace WPEFramework {
+namespace Thunder {
 namespace Plugin {
 
     class FirmwareUpdate: public PluginHost::IPlugin, public PluginHost::JSONRPCErrorAssessor<PluginHost::JSONRPCErrorAssessorTypes::FunctionCallbackType>
@@ -74,7 +74,7 @@ namespace Plugin {
                     _parent.Deactivated(connection);
                 }
 
-                void OnUpdateStateChange (const WPEFramework::Exchange::IFirmwareUpdate::State state , const WPEFramework::Exchange::IFirmwareUpdate::SubState substate) override
+                void OnUpdateStateChange (const Thunder::Exchange::IFirmwareUpdate::State state , const Thunder::Exchange::IFirmwareUpdate::SubState substate) override
                 {
                     LOGINFO("OnUpdateStateChange state: %u , substate: %u \n", state,substate);
                     Exchange::JFirmwareUpdate::Event::OnUpdateStateChange(_parent, state, substate);
@@ -123,4 +123,4 @@ namespace Plugin {
     };
 
 } // namespace Plugin
-} // namespace WPEFramework
+} // namespace Thunder

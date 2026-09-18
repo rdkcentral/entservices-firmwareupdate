@@ -137,7 +137,7 @@ The FirmwareUpdate plugin is a comprehensive firmware management solution design
 - **File System**: Secure handling of firmware files and temporary storage
 
 ### Platform Integration
-- **Thunder Framework**: Full integration with Thunder/WPEFramework ecosystem
+- **Thunder Framework**: Full integration with Thunder ecosystem
 - **RDK Stack**: Native support for RDK platform components
 - **Device Drivers**: Direct integration with hardware abstraction layers
 - **System Management**: Coordination with device lifecycle management

@@ -24,7 +24,7 @@
 #define API_VERSION_NUMBER_MINOR 0
 #define API_VERSION_NUMBER_PATCH 0
 
-namespace WPEFramework
+namespace Thunder
 {
 
     namespace {
@@ -45,7 +45,7 @@ namespace WPEFramework
     {
 
     /*
-     *Register FirmwareUpdate module as wpeframework plugin
+     *Register FirmwareUpdate module as thunder plugin
      **/
     SERVICE_REGISTRATION(FirmwareUpdate, API_VERSION_NUMBER_MAJOR, API_VERSION_NUMBER_MINOR, API_VERSION_NUMBER_PATCH);
 
@@ -85,7 +85,7 @@ namespace WPEFramework
             }
             // Register for notifications
             _firmwareUpdate->Register(&_FirmwareUpdateNotification);
-            // Invoking Plugin API register to wpeframework
+            // Invoking Plugin API register to thunder
             Exchange::JFirmwareUpdate::Register(*this, _firmwareUpdate);
         }
         else
@@ -171,4 +171,4 @@ namespace WPEFramework
         }
     }
 } // namespace Plugin
-} // namespace WPEFramework
+} // namespace Thunder

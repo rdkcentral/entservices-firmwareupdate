@@ -35,9 +35,9 @@
 #define FIRMWAREUPDATEL2TEST_CALLSIGN _T("L2tests.1")
 
 using ::testing::NiceMock;
-using namespace WPEFramework;
+using namespace Thunder;
 using testing::StrictMock;
-using ::WPEFramework::Exchange::IFirmwareUpdate;
+using ::Thunder::Exchange::IFirmwareUpdate;
 
 
 class AsyncHandlerMock
