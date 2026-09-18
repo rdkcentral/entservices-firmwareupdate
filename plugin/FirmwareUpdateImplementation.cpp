@@ -18,10 +18,72 @@
  */
 
 #include "FirmwareUpdateImplementation.h"
+#include <limits.h>
+#include <stdlib.h>
+#include <cstring>
 
 std::atomic<bool> isFlashingInProgress(false);
 std::mutex flashMutex;
 std::mutex logMutex;
+
+// Validate firmware path to prevent path traversal (RDKEMW-24513)
+bool isValidFirmwarePath(const std::string& firmwareFilepath)
+{
+    if (firmwareFilepath.empty())
+    {
+        return false;
+    }
+
+    // Reject path traversal sequences
+    if (firmwareFilepath.find("..") != std::string::npos)
+    {
+        return false;
+    }
+
+    // Canonicalize the path to resolve symlinks
+    char resolvedPath[PATH_MAX];
+    if (realpath(firmwareFilepath.c_str(), resolvedPath) == nullptr)
+    {
+        // Path doesn't exist - this is acceptable for validation before download
+        // but we should still validate the format
+        return true;
+    }
+
+    // Check if the resolved path is still within safe bounds
+    std::string resolved(resolvedPath);
+    if (resolved.find("..") != std::string::npos)
+    {
+        return false;
+    }
+
+    // Allow-listed safe prefixes for firmware images
+    const std::vector<std::string> safePrefixes = {
+        "/tmp/",
+        "/opt/",
+        "/var/tmp/"
+    };
+
+    // If the path is absolute, check it's within safe prefixes
+    if (firmwareFilepath[0] == '/')
+    {
+        bool isSafePrefix = false;
+        for (const auto& prefix : safePrefixes)
+        {
+            if (firmwareFilepath.compare(0, prefix.length(), prefix) == 0)
+            {
+                isSafePrefix = true;
+                break;
+            }
+        }
+        if (!isSafePrefix)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void startProgressTimer() ;
 namespace WPEFramework {
     namespace Plugin {
@@ -718,6 +780,16 @@ namespace WPEFramework {
                 snprintf(fwdls.status, sizeof(fwdls.status), "Status|Failure\n");
                 snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
                 snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|firmwareFilepath is empty\n");
+                updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type.c_str());
+                status = Core::ERROR_INVALID_PARAMETER;
+                return status;
+            }
+            else if (!isValidFirmwarePath(firmwareFilepath))
+            {
+                SWUPDATEERR("Invalid firmware path (traversal or unsafe): %s", firmwareFilepath.c_str());
+                snprintf(fwdls.status, sizeof(fwdls.status), "Status|Failure\n");
+                snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
+                snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|Invalid firmware path\n");
                 updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type.c_str());
                 status = Core::ERROR_INVALID_PARAMETER;
                 return status;
