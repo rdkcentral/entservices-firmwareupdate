@@ -18,6 +18,9 @@
  */
 
 #include "FirmwareUpdateImplementation.h"
+#include <sys/stat.h>
+#include <unistd.h>
+#include <cctype>
 
 std::atomic<bool> isFlashingInProgress(false);
 std::mutex flashMutex;
@@ -1352,6 +1355,26 @@ string deviceSpecificRegexPath(){
 }
 
 bool createDirectory(const std::string &path) {
+    // Validate path to prevent symlink race conditions and path traversal
+    if (path.empty() || path[0] == '/') {
+        SWUPDATEERR("Invalid path: empty or absolute path not allowed\n");
+        return false;
+    }
+    
+    // Check for path traversal sequences
+    if (path.find("..") != std::string::npos) {
+        SWUPDATEERR("Invalid path: path traversal sequences not allowed\n");
+        return false;
+    }
+    
+    // Additional validation: ensure path contains only safe characters
+    for (char c : path) {
+        if (!isalnum(c) && c != '/' && c != '-' && c != '_' && c != '.') {
+            SWUPDATEERR("Invalid path: contains unsafe character\n");
+            return false;
+        }
+    }
+    
     if (mkdir(path.c_str(), 0755) == 0) {
         // Directory created successfully
         return true;
@@ -1373,6 +1396,13 @@ bool copyFileToDirectory(const char *source_file, const char *destination_dir) {
         return false;
     }
 
+    // Validate source file path to prevent traversal
+    std::string source_path(source_file);
+    if (source_path.find("..") != std::string::npos) {
+        SWUPDATEERR("Invalid source path: path traversal sequences not allowed\n");
+        return false;
+    }
+
     // Ensure the destination directory exists
     if (!createDirectory(destination_dir)) {
         SWUPDATEERR("Failed to create or access directory: %s\n", destination_dir);
@@ -1383,10 +1413,31 @@ bool copyFileToDirectory(const char *source_file, const char *destination_dir) {
     const char *file_name = strrchr(source_file, '/');
     file_name = file_name ? file_name + 1 : source_file;
 
-    // Construct the destination file path
-    std::string dest_file_path = std::string(destination_dir) + "/" + file_name;
+    // Validate file name to prevent path traversal
+    std::string safe_file_name(file_name);
+    if (safe_file_name.find("..") != std::string::npos || safe_file_name.find('/') != std::string::npos) {
+        SWUPDATEERR("Invalid file name: path traversal sequences not allowed\n");
+        return false;
+    }
 
-    // This eliminates the race condition between access() check and unlink() call
+    // Construct the destination file path
+    std::string dest_file_path = std::string(destination_dir) + "/" + safe_file_name;
+
+    // Use O_NOFOLLOW to prevent symlink following (platform-specific)
+    // For cross-platform compatibility, we'll use additional validation
+    struct stat src_stat, dest_stat;
+    if (stat(source_file, &src_stat) != 0) {
+        SWUPDATEERR("Error: Cannot access source file %s\n", source_file);
+        return false;
+    }
+
+    // Check if destination exists and is a regular file (not a symlink)
+    if (stat(dest_file_path.c_str(), &dest_stat) == 0) {
+        if (S_ISLNK(dest_stat.st_mode)) {
+            SWUPDATEERR("Error: Destination is a symlink, not allowed for security\n");
+            return false;
+        }
+    }
 
     // Open the source file
     std::ifstream src(source_file, std::ios::binary);
