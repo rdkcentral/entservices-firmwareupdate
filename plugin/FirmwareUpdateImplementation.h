@@ -163,6 +163,8 @@ namespace Plugin {
         int _pendingPowerTransactionId;
         std::mutex _powerModeMutex;
         std::atomic<bool> _powerModeKeepAliveRun;
+        std::atomic<bool> _rebootPending;
+        std::atomic<bool> _maintenancePending;
         std::thread _powerModeKeepAliveThread;
         // Core::Sink prevents deletion when PowerManager releases its reference.
         Core::Sink<PowerModeNotification> _powerModeNotification;
