@@ -150,7 +150,7 @@ namespace Plugin {
         void handlePowerModePreChange(const Exchange::IPowerManager::PowerState currentState,
             const Exchange::IPowerManager::PowerState newState, const int transactionId,
             const int stateChangeAfter);
-        void completePowerModeChange(bool reboot);
+        void completePowerModeChange(bool isComplete);
         void startPowerModeKeepAlive(int transactionId);
         void stopPowerModeKeepAlive();
 

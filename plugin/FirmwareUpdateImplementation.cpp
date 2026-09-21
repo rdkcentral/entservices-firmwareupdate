@@ -199,7 +199,7 @@ namespace WPEFramework {
             }
         }
 
-        void FirmwareUpdateImplementation::completePowerModeChange(bool reboot)
+        void FirmwareUpdateImplementation::completePowerModeChange(bool isComplete)
         {
             // Stop the keep-alive first so the txnId we act on is not concurrently refreshed.
             stopPowerModeKeepAlive();
@@ -208,12 +208,12 @@ namespace WPEFramework {
             {
                 std::lock_guard<std::mutex> lock(_powerModeMutex);
                 transactionId = _pendingPowerTransactionId;
-                if (!reboot) {
+                if (isComplete) {
                     _pendingPowerTransactionId = -1;
                 }
             }
-            SWUPDATEINFO("GSK: completePowerModeChange reboot=%d pendingTxnId=%d clientRegistered=%d hasRef=%d",
-                reboot, transactionId, _powerModeClientRegistered,
+            SWUPDATEINFO("GSK: completePowerModeChange isComplete=%d pendingTxnId=%d clientRegistered=%d hasRef=%d",
+                isComplete, transactionId, _powerModeClientRegistered,
                 static_cast<int>(static_cast<bool>(_powerManager)));
 
             // Only act on a deferred transition. Never force deep sleep on our own.
@@ -222,7 +222,7 @@ namespace WPEFramework {
                 return;
             }
 
-            if (reboot) {
+            if (!isComplete) {
                 // Case 2: success + reboot=true -> hold deepsleep 630s for the reboot window.
                 SWUPDATEINFO("GSK: [Case 2] Holding deepsleep 630s for reboot txnId=%d", transactionId);
                 _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 630);
@@ -651,7 +651,7 @@ namespace WPEFramework {
                     updateUpgradeFlag(0,2);
                 }
                 SWUPDATEINFO("GSK: Failure branch -> release deferred deepsleep (if any)");
-                completePowerModeChange(false);
+                completePowerModeChange(true);
 
             } else if (true == mediaclient) {                
                 SWUPDATEINFO("Image Flashing is success\n");
@@ -687,12 +687,11 @@ namespace WPEFramework {
                     dispatchAndUpdateEvent(_WAITING_FOR_REBOOT,"");
                     SWUPDATEINFO("GSK: USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
                     if (strncmp(reboot_flag, "true", 4) == 0 && upgrade_type != PDRI_UPGRADE) {
-                        SWUPDATEINFO("GSK: USB success + reboot=true -> hold deepsleep 630s then postFlash");
-                        completePowerModeChange(true);
-                        postFlash(maint, file+1, upgrade_type, reboot_flag, initiated_type);
+                        SWUPDATEINFO("GSK: USB success + reboot=true -> hold deepsleep 630s; UI owns reboot");
+                        completePowerModeChange(false);
                     } else {
                         SWUPDATEINFO("GSK: USB success + reboot=false/PDRI -> ack deferred deepsleep");
-                        completePowerModeChange(false);
+                        completePowerModeChange(true);
                     }
                 }	
                 else
@@ -700,7 +699,7 @@ namespace WPEFramework {
                     SWUPDATEINFO("GSK: non-USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
                     if (strncmp(reboot_flag, "true", 4) == 0 && upgrade_type != PDRI_UPGRADE) {
                         SWUPDATEINFO("GSK: non-USB success + reboot=true -> hold deepsleep 630s");
-                        completePowerModeChange(true);
+                        completePowerModeChange(false);
                     }
                     SWUPDATEINFO("GSK: Entering postFlash");
                     postFlash(maint, file+1, upgrade_type, reboot_flag ,initiated_type);
@@ -722,7 +721,7 @@ namespace WPEFramework {
                 snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Download complete\n");
                 snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|");
                 SWUPDATEINFO("GSK: Non-mediaclient success -> release deferred deepsleep");
-                completePowerModeChange(false);
+                completePowerModeChange(true);
             }
 
             if (Utils::fileExists(headerinfofile)) {
@@ -887,7 +886,7 @@ namespace WPEFramework {
                     snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|File copy operation failed.\n");
                     updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type);
                     SWUPDATEINFO("GSK: USB copy failed early -> release deferred deepsleep");
-                    completePowerModeChange(false); // Need to check. since flashImage start at #857
+                    completePowerModeChange(true); // Need to check. since flashImage start at #857
 
                     return ;
                 }
