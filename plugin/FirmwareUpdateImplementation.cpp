@@ -34,6 +34,8 @@ namespace WPEFramework {
             _powerModeClientRegistered(false),
             _pendingPowerTransactionId(-1),
             _powerModeKeepAliveRun(false),
+            _rebootPending(false),
+            _maintenancePending(false),
             _powerModeNotification(this)
         {
             LOGINFO("Create FirmwareUpdateImplementation Instance");
@@ -155,9 +157,16 @@ namespace WPEFramework {
                     std::lock_guard<std::mutex> lock(_powerModeMutex);
                     _pendingPowerTransactionId = transactionId;
                 }
-                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 600);
+                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 300);
                 SWUPDATEINFO("GSK: [Case 1] Deferred deepsleep for flash txnId=%d (initial 600s, keep-alive will refresh)", transactionId);
                 startPowerModeKeepAlive(transactionId);
+            } else if (_rebootPending.load()) {
+                {
+                    std::lock_guard<std::mutex> lock(_powerModeMutex);
+                    _pendingPowerTransactionId = transactionId;
+                }
+                SWUPDATEINFO("GSK: [Case 2 late] Reboot pending; delaying deepsleep txnId=%d", transactionId);
+                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 630);
             } else {
                 SWUPDATEINFO("GSK: No flash in progress -> ack deepsleep txnId=%d", transactionId);
                 _powerManager->PowerModePreChangeComplete(_powerModeClientId, transactionId);
@@ -210,6 +219,8 @@ namespace WPEFramework {
                 transactionId = _pendingPowerTransactionId;
                 if (isComplete) {
                     _pendingPowerTransactionId = -1;
+                    _rebootPending = false;
+                    _maintenancePending = false;
                 }
             }
             SWUPDATEINFO("GSK: completePowerModeChange isComplete=%d pendingTxnId=%d clientRegistered=%d hasRef=%d",
@@ -607,9 +618,16 @@ namespace WPEFramework {
 
                 ret = v_secure_system("/lib/rdk/imageFlasher.sh '%s' '%s' '%s' '%s' '%s' '%s' >> /opt/logs/swupdate.log", proto, server_url, difw_path, file+1, rflag, uptype);
 
+                _rebootPending = (ret == 0 &&
+                    strncmp(reboot_flag, "true", 4) == 0 &&
+                    upgrade_type != PDRI_UPGRADE);
+                _maintenancePending = (strncmp(maint, "true", 4) == 0) &&
+                    (upgrade_type != PDRI_UPGRADE);
+
                 // Reset flashing status
                 isFlashingInProgress = false;
-                SWUPDATEINFO("GSK: imageFlasher.sh returned ret=%d proto=%s upgrade_type=%d", ret, proto, upgrade_type);
+                SWUPDATEINFO("GSK: imageFlasher.sh returned ret=%d proto=%s upgrade_type=%d rebootPending=%d maintenancePending=%d",
+                    ret, proto, upgrade_type, _rebootPending.load(), _maintenancePending.load());
 
                 // Wait for the timer thread to complete
                 if (timerThread.joinable()) timerThread.join();
@@ -682,9 +700,7 @@ namespace WPEFramework {
                         fprintf(fp, "%s\n", file+1);
                         fclose(fp);
                     }
-
-                    dispatchAndUpdateEvent(_FLASHING_SUCCEEDED,"");
-                    dispatchAndUpdateEvent(_WAITING_FOR_REBOOT,"");
+#if 0 // Simulation Critical reboot case code.
                     SWUPDATEINFO("GSK: USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
                     if (strncmp(reboot_flag, "true", 4) == 0 && upgrade_type != PDRI_UPGRADE) {
                         SWUPDATEINFO("GSK: USB success + reboot=true -> hold deepsleep 630s; UI owns reboot");
@@ -693,22 +709,24 @@ namespace WPEFramework {
                         SWUPDATEINFO("GSK: USB success + reboot=false/PDRI -> ack deferred deepsleep");
                         completePowerModeChange(true);
                     }
+                    SWUPDATEINFO("GSK: Entering postFlash: reboot_flag =%s, maint%s\n", reboot_flag, maint);
+                    postFlash(maint, file+1, upgrade_type, reboot_flag ,initiated_type);
+                    SWUPDATEINFO("GSK: postFlash returned");
+#endif
+                    dispatchAndUpdateEvent(_FLASHING_SUCCEEDED,"");
+                    dispatchAndUpdateEvent(_WAITING_FOR_REBOOT,"");
+                    
                 }	
-                else
+                else //non-mediaclient and non-zero ret
                 {
                     SWUPDATEINFO("GSK: non-USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
-                    if (strncmp(reboot_flag, "true", 4) == 0 && upgrade_type != PDRI_UPGRADE) {
-                        SWUPDATEINFO("GSK: non-USB success + reboot=true -> hold deepsleep 630s");
-                        completePowerModeChange(false);
-                    }
-                    SWUPDATEINFO("GSK: Entering postFlash");
+                    SWUPDATEINFO("GSK: Entering postFlash: reboot_flag =%s, maint%s\n", reboot_flag, maint);
                     postFlash(maint, file+1, upgrade_type, reboot_flag ,initiated_type);
                     SWUPDATEINFO("GSK: postFlash returned");
                     dispatchAndUpdateEvent(_FLASHING_SUCCEEDED,"");
-                    if (strncmp(reboot_flag, "true", 4) != 0 || upgrade_type == PDRI_UPGRADE) {
-                        SWUPDATEINFO("GSK: non-USB success + reboot=false/PDRI -> ack deferred deepsleep");
-                        completePowerModeChange(false);
-                    }
+                    SWUPDATEINFO("GSK: non-USB success -> complete deferred deepsleep rebootPending=%d",
+                        _rebootPending.load());
+                    completePowerModeChange(!_rebootPending.load());
                 }
 
                 if(std::string(initiated_type) == "device")
@@ -720,7 +738,7 @@ namespace WPEFramework {
                 snprintf(fwdls.status, sizeof(fwdls.status), "Status|Download complete\n");
                 snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Download complete\n");
                 snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|");
-                SWUPDATEINFO("GSK: Non-mediaclient success -> release deferred deepsleep");
+                //SWUPDATEINFO("GSK: Non-mediaclient success -> release deferred deepsleep");
                 completePowerModeChange(true);
             }
 
@@ -886,7 +904,7 @@ namespace WPEFramework {
                     snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|File copy operation failed.\n");
                     updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type);
                     SWUPDATEINFO("GSK: USB copy failed early -> release deferred deepsleep");
-                    completePowerModeChange(true); // Need to check. since flashImage start at #857
+                    completePowerModeChange(true);
 
                     return ;
                 }
@@ -897,6 +915,14 @@ namespace WPEFramework {
                     SWUPDATEINFO("Upgrade file path after copy %s \n" ,upgrade_file.c_str());
                 }
             }
+
+            if (strncmp(reboot_flag, "true", 4) == 0)
+            {
+                maint = "true";
+                SWUPDATEINFO("GSK: Simulation : force maint=%s\n", maint);
+            }
+
+            SWUPDATEINFO("GSK: calling flashImage(reboot_flag=%s, maint=%s)\n", reboot_flag, maint);
 
             //Note : flashImage() is combination of both rdkfwupdater/src/flash.c(Flashing part of deviceInitiatedFWDnld.sh) and Flashing part of userInitiatedFWDnld.sh . For now except upgrade_file ,upgrade_type all other param are passed with default value .other param useful when for future implementations
             // Call the actual flashing function
@@ -997,6 +1023,8 @@ namespace WPEFramework {
                 status = ERROR_FIRMWAREUPDATE_INPROGRESS;
                 return status;
             }
+
+            _rebootPending = false;
 
             if (flashThread.joinable()) {
                 SWUPDATEINFO("flashThread is still running or joinable. Joining now...");
