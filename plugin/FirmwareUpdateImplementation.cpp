@@ -160,12 +160,13 @@ namespace WPEFramework {
                 _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 300);
                 SWUPDATEINFO("GSK: [Case 1] Deferred deepsleep for flash txnId=%d (initial 600s, keep-alive will refresh)", transactionId);
                 startPowerModeKeepAlive(transactionId);
-            } else if (_rebootPending.load()) {
+            } else if (_rebootPending.load() || _maintenancePending.load()) {
                 {
                     std::lock_guard<std::mutex> lock(_powerModeMutex);
                     _pendingPowerTransactionId = transactionId;
                 }
-                SWUPDATEINFO("GSK: [Case 2 late] Reboot pending; delaying deepsleep txnId=%d", transactionId);
+                SWUPDATEINFO("GSK: [Case 2 late] Reboot/maintenance pending maint=%d reboot=%d; delaying deepsleep txnId=%d",
+                    _maintenancePending.load(), _rebootPending.load(), transactionId);
                 _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 630);
             } else {
                 SWUPDATEINFO("GSK: No flash in progress -> ack deepsleep txnId=%d", transactionId);
@@ -217,6 +218,15 @@ namespace WPEFramework {
             {
                 std::lock_guard<std::mutex> lock(_powerModeMutex);
                 transactionId = _pendingPowerTransactionId;
+
+                // The PowerManager transaction is only valid when it was actually deferred
+                // from a pre-change callback. Repeated terminal-path calls must not send a
+                // stale/invalid txnId back to PowerManager.
+                if (transactionId < 0) {
+                    SWUPDATEINFO("GSK: completePowerModeChange no-op (no valid deferred transaction)");
+                    return;
+                }
+
                 if (isComplete) {
                     _pendingPowerTransactionId = -1;
                     _rebootPending = false;
@@ -228,12 +238,13 @@ namespace WPEFramework {
                 static_cast<int>(static_cast<bool>(_powerManager)));
 
             // Only act on a deferred transition. Never force deep sleep on our own.
-            if (transactionId < 0 || !_powerManager || !_powerModeClientRegistered) {
-                SWUPDATEINFO("GSK: completePowerModeChange no-op (no deferred transition)");
+            if (!_powerManager || !_powerModeClientRegistered) {
+                SWUPDATEINFO("GSK: completePowerModeChange no-op (power manager unavailable)");
                 return;
             }
 
             if (!isComplete) {
+                // Need to check further.
                 // Case 2: success + reboot=true -> hold deepsleep 630s for the reboot window.
                 SWUPDATEINFO("GSK: [Case 2] Holding deepsleep 630s for reboot txnId=%d", transactionId);
                 _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 630);
@@ -618,11 +629,13 @@ namespace WPEFramework {
 
                 ret = v_secure_system("/lib/rdk/imageFlasher.sh '%s' '%s' '%s' '%s' '%s' '%s' >> /opt/logs/swupdate.log", proto, server_url, difw_path, file+1, rflag, uptype);
 
-                _rebootPending = (ret == 0 &&
+                const bool flashSucceeded = (ret == 0);
+                _rebootPending = (flashSucceeded &&
                     strncmp(reboot_flag, "true", 4) == 0 &&
                     upgrade_type != PDRI_UPGRADE);
                 _maintenancePending = (strncmp(maint, "true", 4) == 0) &&
-                    (upgrade_type != PDRI_UPGRADE);
+                    (upgrade_type != PDRI_UPGRADE) &&
+                    (flashSucceeded ? _rebootPending.load() : true);
 
                 // Reset flashing status
                 isFlashingInProgress = false;
@@ -916,11 +929,13 @@ namespace WPEFramework {
                 }
             }
 
+            #if 1
             if (strncmp(reboot_flag, "true", 4) == 0)
             {
                 maint = "true";
                 SWUPDATEINFO("GSK: Simulation : force maint=%s\n", maint);
             }
+            #endif
 
             SWUPDATEINFO("GSK: calling flashImage(reboot_flag=%s, maint=%s)\n", reboot_flag, maint);
 
