@@ -19,6 +19,7 @@
 
 #include "FirmwareUpdateImplementation.h"
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <cctype>
 
@@ -1356,8 +1357,8 @@ string deviceSpecificRegexPath(){
 
 bool createDirectory(const std::string &path) {
     // Validate path to prevent symlink race conditions and path traversal
-    if (path.empty() || path[0] == '/') {
-        SWUPDATEERR("Invalid path: empty or absolute path not allowed\n");
+    if (path.empty()) {
+        SWUPDATEERR("Invalid path: empty path not allowed\n");
         return false;
     }
     
@@ -1381,8 +1382,8 @@ bool createDirectory(const std::string &path) {
     }
     
     if (errno == EEXIST) {
-        // Directory already exists, which is acceptable
-        return true;
+        struct stat directoryStat;
+        return lstat(path.c_str(), &directoryStat) == 0 && S_ISDIR(directoryStat.st_mode) && !S_ISLNK(directoryStat.st_mode);
     }
     
     // mkdir failed for a reason other than directory already existing
@@ -1426,42 +1427,53 @@ bool copyFileToDirectory(const char *source_file, const char *destination_dir) {
     // Use O_NOFOLLOW to prevent symlink following (platform-specific)
     // For cross-platform compatibility, we'll use additional validation
     struct stat src_stat, dest_stat;
-    if (stat(source_file, &src_stat) != 0) {
-        SWUPDATEERR("Error: Cannot access source file %s\n", source_file);
+    if (lstat(source_file, &src_stat) != 0 || !S_ISREG(src_stat.st_mode) || S_ISLNK(src_stat.st_mode)) {
+        SWUPDATEERR("Error: Source must be a regular file: %s\n", source_file);
         return false;
     }
 
-    // Check if destination exists and is a regular file (not a symlink)
-    if (stat(dest_file_path.c_str(), &dest_stat) == 0) {
-        if (S_ISLNK(dest_stat.st_mode)) {
-            SWUPDATEERR("Error: Destination is a symlink, not allowed for security\n");
-            return false;
+    if (lstat(dest_file_path.c_str(), &dest_stat) == 0 && (!S_ISREG(dest_stat.st_mode) || S_ISLNK(dest_stat.st_mode))) {
+        SWUPDATEERR("Error: Destination is not a regular file\n");
+        return false;
+    }
+
+    const int sourceFd = open(source_file, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+    if (sourceFd < 0 || fstat(sourceFd, &src_stat) != 0 || !S_ISREG(src_stat.st_mode)) {
+        if (sourceFd >= 0)
+            close(sourceFd);
+        SWUPDATEERR("Error: Could not securely open source file %s\n", source_file);
+        return false;
+    }
+
+    const int destinationFd = open(dest_file_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0644);
+    if (destinationFd < 0) {
+        close(sourceFd);
+        SWUPDATEERR("Error: Could not securely open destination file %s\n", dest_file_path.c_str());
+        return false;
+    }
+
+    bool copied = true;
+    char buffer[8192];
+    ssize_t bytesRead;
+    while ((bytesRead = read(sourceFd, buffer, sizeof(buffer))) > 0) {
+        ssize_t offset = 0;
+        while (offset < bytesRead) {
+            const ssize_t bytesWritten = write(destinationFd, buffer + offset, bytesRead - offset);
+            if (bytesWritten <= 0) {
+                copied = false;
+                break;
+            }
+            offset += bytesWritten;
         }
+        if (!copied)
+            break;
     }
+    if (bytesRead < 0)
+        copied = false;
 
-    // Open the source file
-    std::ifstream src(source_file, std::ios::binary);
-    if (!src) {
-        SWUPDATEERR("Error: Could not open source file %s\n", source_file);
-        return false;
-    }
-
-    // Open the destination file with trunc flag to overwrite if exists
-    std::ofstream dest(dest_file_path, std::ios::binary | std::ios::trunc);
-    if (!dest) {
-        SWUPDATEERR("Error: Could not open destination file %s\n", dest_file_path.c_str());
-        return false;
-    }
-
-    if (src.peek() == std::ifstream::traits_type::eof()) {
-        SWUPDATEINFO("Source file is empty. Copying as empty file.\n");
-    }
-
-    // Copy the file content
-    dest << src.rdbuf();
-
-    // Check for actual I/O errors (ignore EOF)
-    if (src.bad() || dest.bad()) {
+    close(destinationFd);
+    close(sourceFd);
+    if (!copied) {
         SWUPDATEERR("Error: File copy failed due to I/O error.\n");
         return false;
     }

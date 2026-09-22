@@ -1294,6 +1294,55 @@ TEST_F(FirmwareUpdateTest, CopyFileToDirectory_NullParameters)
     EXPECT_FALSE(result);
 }
 
+TEST_F(FirmwareUpdateTest, CreateDirectory_RejectsTraversalAndSymlink)
+{
+    EXPECT_FALSE(createDirectory("/tmp/firmware/../outside"));
+
+    const char* target = "/tmp/firmware_update_directory_target";
+    const char* link = "/tmp/firmware_update_directory_link";
+    unlink(link);
+    rmdir(target);
+    ASSERT_EQ(0, mkdir(target, 0755));
+    ASSERT_EQ(0, symlink(target, link));
+    EXPECT_FALSE(createDirectory(link));
+    unlink(link);
+    rmdir(target);
+}
+
+TEST_F(FirmwareUpdateTest, CopyFileToDirectory_RejectsSymlinksWithoutSideEffects)
+{
+    const char* source = "/tmp/firmware_update_source";
+    const char* sourceLink = "/tmp/firmware_update_source_link";
+    const char* destinationDirectory = "/tmp/firmware_update_destination";
+    const std::string destination = std::string(destinationDirectory) + "/firmware_update_source";
+    unlink(sourceLink);
+    unlink(destination.c_str());
+    rmdir(destinationDirectory);
+
+    std::ofstream sourceFile(source);
+    sourceFile << "source-content";
+    sourceFile.close();
+    ASSERT_EQ(0, symlink(source, sourceLink));
+    EXPECT_FALSE(copyFileToDirectory(sourceLink, destinationDirectory));
+
+    ASSERT_TRUE(createDirectory(destinationDirectory));
+    std::ofstream protectedFile(sourceLink);
+    protectedFile << "protected-content";
+    protectedFile.close();
+    ASSERT_EQ(0, symlink(sourceLink, destination.c_str()));
+    EXPECT_FALSE(copyFileToDirectory(source, destinationDirectory));
+
+    std::ifstream unchanged(sourceLink);
+    std::string content;
+    unchanged >> content;
+    EXPECT_EQ("protected-content", content);
+
+    unlink(destination.c_str());
+    unlink(sourceLink);
+    unlink(source);
+    rmdir(destinationDirectory);
+}
+
 TEST_F(FirmwareUpdateTest, CopyFileToDirectory_NonExistentSource)
 {
     bool result = copyFileToDirectory("/tmp/nonexistent.bin", "/tmp");
