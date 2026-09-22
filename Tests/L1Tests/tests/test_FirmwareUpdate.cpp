@@ -135,6 +135,7 @@ extern string deviceSpecificRegexBin();
 extern string deviceSpecificRegexPath();
 extern bool createDirectory(const std::string &path);
 extern bool copyFileToDirectory(const char *source_file, const char *destination_dir);
+extern bool isValidFirmwarePath(const std::string& firmwareFilepath);
 extern bool FirmwareStatus(std::string& state, std::string& substate, const std::string& mode);
 extern std::string GetCurrentTimestamp();
 extern std::string readProperty(std::string filename, std::string property, std::string delimiter);
@@ -841,6 +842,27 @@ TEST_F(FirmwareUpdateTest, UpdateFirmware_PathTraversal)
     string maliciousPath = "../../../etc/passwd";
     string request = "{\"firmwareFilepath\":\"" + maliciousPath + "\",\"firmwareType\":\"" + TEST_FIRMWARE_TYPE_PCI + "\"}";
     EXPECT_EQ(Core::ERROR_INVALID_PARAMETER, handler.Invoke(connection, _T("updateFirmware"), request, response));
+}
+
+TEST_F(FirmwareUpdateTest, FirmwarePathPolicy)
+{
+    const char* validPath = "/tmp/firmware_update_valid_image.bin";
+    const char* symlinkPath = "/tmp/firmware_update_symlink_image.bin";
+    unlink(symlinkPath);
+    std::ofstream image(validPath);
+    image << "firmware";
+    image.close();
+    ASSERT_EQ(0, symlink(validPath, symlinkPath));
+
+    EXPECT_TRUE(isValidFirmwarePath(validPath));
+    EXPECT_FALSE(isValidFirmwarePath(symlinkPath));
+    EXPECT_FALSE(isValidFirmwarePath("/tmp/../etc/hosts"));
+    EXPECT_FALSE(isValidFirmwarePath("relative/image.bin"));
+    EXPECT_FALSE(isValidFirmwarePath("/etc/hosts"));
+    EXPECT_FALSE(isValidFirmwarePath("/tmp/nonexistent_firmware_image.bin"));
+
+    unlink(symlinkPath);
+    unlink(validPath);
 }
 
 TEST_F(FirmwareUpdateTest, Stress_MultipleGetUpdateState)

@@ -21,6 +21,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <cstring>
+#include <sys/stat.h>
 
 std::atomic<bool> isFlashingInProgress(false);
 std::mutex flashMutex;
@@ -29,59 +30,39 @@ std::mutex logMutex;
 // Validate firmware path to prevent path traversal (RDKEMW-24513)
 bool isValidFirmwarePath(const std::string& firmwareFilepath)
 {
-    if (firmwareFilepath.empty())
+    if (firmwareFilepath.empty() || firmwareFilepath[0] != '/' || firmwareFilepath.find("..") != std::string::npos)
     {
         return false;
     }
 
-    // Reject path traversal sequences
-    if (firmwareFilepath.find("..") != std::string::npos)
+    struct stat pathStat;
+    if (lstat(firmwareFilepath.c_str(), &pathStat) != 0 || !S_ISREG(pathStat.st_mode) || S_ISLNK(pathStat.st_mode))
     {
         return false;
     }
 
-    // Canonicalize the path to resolve symlinks
     char resolvedPath[PATH_MAX];
     if (realpath(firmwareFilepath.c_str(), resolvedPath) == nullptr)
     {
-        // Path doesn't exist - this is acceptable for validation before download
-        // but we should still validate the format
-        return true;
-    }
-
-    // Check if the resolved path is still within safe bounds
-    std::string resolved(resolvedPath);
-    if (resolved.find("..") != std::string::npos)
-    {
         return false;
     }
 
-    // Allow-listed safe prefixes for firmware images
+    const std::string resolved(resolvedPath);
     const std::vector<std::string> safePrefixes = {
         "/tmp/",
         "/opt/",
         "/var/tmp/"
     };
 
-    // If the path is absolute, check it's within safe prefixes
-    if (firmwareFilepath[0] == '/')
+    for (const auto& prefix : safePrefixes)
     {
-        bool isSafePrefix = false;
-        for (const auto& prefix : safePrefixes)
+        if (resolved.compare(0, prefix.length(), prefix) == 0)
         {
-            if (firmwareFilepath.compare(0, prefix.length(), prefix) == 0)
-            {
-                isSafePrefix = true;
-                break;
-            }
-        }
-        if (!isSafePrefix)
-        {
-            return false;
+            return true;
         }
     }
 
-    return true;
+    return false;
 }
 
 void startProgressTimer() ;
