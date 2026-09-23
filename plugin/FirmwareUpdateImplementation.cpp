@@ -726,7 +726,7 @@ namespace WPEFramework {
                         fprintf(fp, "%s\n", file+1);
                         fclose(fp);
                     }
-#if 0 // Simulation Critical reboot case code.
+#if 1 // Simulation Critical reboot case code.
                     SWUPDATEINFO("GSK: USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
                     if (strncmp(reboot_flag, "true", 4) == 0 && upgrade_type != PDRI_UPGRADE) {
                         SWUPDATEINFO("GSK: USB success + reboot=true -> hold deepsleep 630s; UI owns reboot");
@@ -740,7 +740,7 @@ namespace WPEFramework {
                     SWUPDATEINFO("GSK: postFlash returned");
 #endif
                     dispatchAndUpdateEvent(_FLASHING_SUCCEEDED,"");
-                    dispatchAndUpdateEvent(_WAITING_FOR_REBOOT,"");
+                    //dispatchAndUpdateEvent(_WAITING_FOR_REBOOT,"");
                     
                 }	
                 else //non-mediaclient and non-zero ret
@@ -942,7 +942,7 @@ namespace WPEFramework {
                 }
             }
 
-            #if 1
+            #if 1 //Used to simulate maintenance critical reboot scenarios.
             if (strncmp(reboot_flag, "true", 4) == 0)
             {
                 maint = "true";
