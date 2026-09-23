@@ -32,6 +32,7 @@
 #include <plugins/plugins.h>
 #include "FirmwareUpdateHelper.h"
 #include "PowerManagerInterface.h"
+#include <functional>
 
 std::thread flashThread;
 
@@ -151,7 +152,7 @@ namespace Plugin {
             const Exchange::IPowerManager::PowerState newState, const int transactionId,
             const int stateChangeAfter);
         void completePowerModeChange(bool isComplete);
-        void startPowerModeKeepAlive(int transactionId);
+        void startPowerModeKeepAlive(int transactionId, int refreshIntervalSec, int delaySec, std::function<bool()> stillPending);
         void stopPowerModeKeepAlive();
 
         mutable Core::CriticalSection _adminLock;

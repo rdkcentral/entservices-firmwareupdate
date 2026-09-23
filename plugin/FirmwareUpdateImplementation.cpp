@@ -146,6 +146,13 @@ namespace WPEFramework {
                  currentState == Exchange::IPowerManager::PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
 
             if (!enteringDeepSleep || !_powerModeClientRegistered) {
+                if (!enteringDeepSleep) {
+                    // A different transition means PowerManager's active transaction moved on;
+                    // any keep-alive still refreshing the old deep-sleep txnId is now stale.
+                    stopPowerModeKeepAlive();
+                    std::lock_guard<std::mutex> lock(_powerModeMutex);
+                    _pendingPowerTransactionId = -1;
+                }
                 SWUPDATEINFO("GSK: Skipping pre-change (not target transition or not registered)");
                 return;
             }
@@ -159,7 +166,7 @@ namespace WPEFramework {
                 }
                 _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 300);
                 SWUPDATEINFO("GSK: [Case 1] Deferred deepsleep for flash txnId=%d (initial 600s, keep-alive will refresh)", transactionId);
-                startPowerModeKeepAlive(transactionId);
+                startPowerModeKeepAlive(transactionId, 300, 600, []() { return isFlashingInProgress.load(); });
             } else if (_rebootPending.load() || _maintenancePending.load()) {
                 {
                     std::lock_guard<std::mutex> lock(_powerModeMutex);
@@ -168,30 +175,34 @@ namespace WPEFramework {
                 SWUPDATEINFO("GSK: [Case 2 late] Reboot/maintenance pending maint=%d reboot=%d; delaying deepsleep txnId=%d",
                     _maintenancePending.load(), _rebootPending.load(), transactionId);
                 _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 630);
+                // Keep refreshing the reboot-hold window; a later, different txnId (new event)
+                // will stop this loop before it can send a delay for the now-stale id.
+                startPowerModeKeepAlive(transactionId, 300, 630,
+                    [this]() { return _rebootPending.load() || _maintenancePending.load(); });
             } else {
                 SWUPDATEINFO("GSK: No flash in progress -> ack deepsleep txnId=%d", transactionId);
                 _powerManager->PowerModePreChangeComplete(_powerModeClientId, transactionId);
             }
         }
 
-        void FirmwareUpdateImplementation::startPowerModeKeepAlive(int transactionId)
+        void FirmwareUpdateImplementation::startPowerModeKeepAlive(int transactionId, int refreshIntervalSec,
+            int delaySec, std::function<bool()> stillPending)
         {
-            // Stop any previous keep-alive first so txnId ownership is single-writer.
+            // Stop any previous keep-alive first so txnId ownership is single-writer; this is what
+            // aborts refreshing a stale id once a new pre-change event supersedes it.
             stopPowerModeKeepAlive();
             _powerModeKeepAliveRun = true;
-            _powerModeKeepAliveThread = std::thread([this, transactionId]() {
-                constexpr int REFRESH_INTERVAL_SEC = 300; // refresh every 5 min
-                constexpr int DELAY_VALUE_SEC      = 600; // 10 min window per refresh
+            _powerModeKeepAliveThread = std::thread([this, transactionId, refreshIntervalSec, delaySec, stillPending]() {
                 SWUPDATEINFO("GSK: KeepAlive started txnId=%d", transactionId);
-                while (_powerModeKeepAliveRun.load() && isFlashingInProgress.load()) {
-                    for (int i = 0; i < REFRESH_INTERVAL_SEC; ++i) {
-                        if (!_powerModeKeepAliveRun.load() || !isFlashingInProgress.load()) break;
+                while (_powerModeKeepAliveRun.load() && stillPending()) {
+                    for (int i = 0; i < refreshIntervalSec; ++i) {
+                        if (!_powerModeKeepAliveRun.load() || !stillPending()) break;
                         std::this_thread::sleep_for(std::chrono::seconds(1));
                     }
-                    if (!_powerModeKeepAliveRun.load() || !isFlashingInProgress.load()) break;
+                    if (!_powerModeKeepAliveRun.load() || !stillPending()) break;
                     if (_powerManager && _powerModeClientRegistered) {
-                        _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, DELAY_VALUE_SEC);
-                        SWUPDATEINFO("GSK: KeepAlive refreshed delay txnId=%d (%ds)", transactionId, DELAY_VALUE_SEC);
+                        _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, delaySec);
+                        SWUPDATEINFO("GSK: KeepAlive refreshed delay txnId=%d (%ds)", transactionId, delaySec);
                     }
                 }
                 SWUPDATEINFO("GSK: KeepAlive exiting txnId=%d", transactionId);
@@ -244,10 +255,12 @@ namespace WPEFramework {
             }
 
             if (!isComplete) {
-                // Need to check further.
-                // Case 2: success + reboot=true -> hold deepsleep 630s for the reboot window.
+                // Case 2: success + reboot=true -> hold deepsleep for the reboot window, refreshed
+                // periodically so the hold survives past a single 630s deadline.
                 SWUPDATEINFO("GSK: [Case 2] Holding deepsleep 630s for reboot txnId=%d", transactionId);
                 _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 630);
+                startPowerModeKeepAlive(transactionId, 300, 630,
+                    [this]() { return _rebootPending.load() || _maintenancePending.load(); });
             } else {
                 // Case 3 (success + reboot=false) or Case 4 (failure) -> let deepsleep proceed.
                 SWUPDATEINFO("GSK: [Case 3/4] Acking deepsleep transition txnId=%d", transactionId);
