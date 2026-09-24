@@ -279,6 +279,41 @@ TEST_F(FirmwareUpdateTest,RejectsPathTraversal)
     EXPECT_NE(status, Core::ERROR_NONE);
 }
 
+TEST_F(FirmwareUpdateTest,ValidatedFirmwareHandleSurvivesPathReplacement)
+{
+    const char* firmwarePath = "/tmp/firmware_handle_test.bin";
+    const char* movedPath = "/tmp/firmware_handle_test.original";
+    unlink(firmwarePath);
+    unlink(movedPath);
+
+    {
+        std::ofstream file(firmwarePath);
+        file << "validated-content";
+    }
+
+    std::string canonicalPath;
+    std::string errorReason;
+    int firmwareFd = -1;
+    ASSERT_TRUE(WPEFramework::Plugin::FirmwareUpdateImplementation::isValidFirmwarePath(firmwarePath, canonicalPath, firmwareFd, errorReason));
+    ASSERT_GE(firmwareFd, 0);
+
+    ASSERT_EQ(0, rename(firmwarePath, movedPath));
+    {
+        std::ofstream replacement(firmwarePath);
+        replacement << "replacement-content";
+    }
+
+    char content[32] = {};
+    ASSERT_EQ(0, lseek(firmwareFd, 0, SEEK_SET));
+    const ssize_t bytesRead = read(firmwareFd, content, sizeof(content) - 1);
+    EXPECT_GT(bytesRead, 0);
+    EXPECT_STREQ("validated-content", content);
+
+    close(firmwareFd);
+    unlink(firmwarePath);
+    unlink(movedPath);
+}
+
 TEST_F(FirmwareUpdateTest,RejectsSymlink)
 {
     std::ofstream file("/tmp/test_firmware.bin");
