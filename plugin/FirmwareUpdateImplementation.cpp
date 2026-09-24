@@ -18,6 +18,10 @@
  */
 
 #include "FirmwareUpdateImplementation.h"
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <cctype>
 
 std::atomic<bool> isFlashingInProgress(false);
 std::mutex flashMutex;
@@ -1352,14 +1356,34 @@ string deviceSpecificRegexPath(){
 }
 
 bool createDirectory(const std::string &path) {
+    // Validate path to prevent symlink race conditions and path traversal
+    if (path.empty()) {
+        SWUPDATEERR("Invalid path: empty path not allowed\n");
+        return false;
+    }
+    
+    // Check for path traversal sequences
+    if (path.find("..") != std::string::npos) {
+        SWUPDATEERR("Invalid path: path traversal sequences not allowed\n");
+        return false;
+    }
+    
+    // Additional validation: ensure path contains only safe characters
+    for (char c : path) {
+        if (!isalnum(c) && c != '/' && c != '-' && c != '_' && c != '.') {
+            SWUPDATEERR("Invalid path: contains unsafe character\n");
+            return false;
+        }
+    }
+    
     if (mkdir(path.c_str(), 0755) == 0) {
         // Directory created successfully
         return true;
     }
     
     if (errno == EEXIST) {
-        // Directory already exists, which is acceptable
-        return true;
+        struct stat directoryStat;
+        return lstat(path.c_str(), &directoryStat) == 0 && S_ISDIR(directoryStat.st_mode) && !S_ISLNK(directoryStat.st_mode);
     }
     
     // mkdir failed for a reason other than directory already existing
@@ -1373,6 +1397,13 @@ bool copyFileToDirectory(const char *source_file, const char *destination_dir) {
         return false;
     }
 
+    // Validate source file path to prevent traversal
+    std::string source_path(source_file);
+    if (source_path.find("..") != std::string::npos) {
+        SWUPDATEERR("Invalid source path: path traversal sequences not allowed\n");
+        return false;
+    }
+
     // Ensure the destination directory exists
     if (!createDirectory(destination_dir)) {
         SWUPDATEERR("Failed to create or access directory: %s\n", destination_dir);
@@ -1383,34 +1414,66 @@ bool copyFileToDirectory(const char *source_file, const char *destination_dir) {
     const char *file_name = strrchr(source_file, '/');
     file_name = file_name ? file_name + 1 : source_file;
 
+    // Validate file name to prevent path traversal
+    std::string safe_file_name(file_name);
+    if (safe_file_name.find("..") != std::string::npos || safe_file_name.find('/') != std::string::npos) {
+        SWUPDATEERR("Invalid file name: path traversal sequences not allowed\n");
+        return false;
+    }
+
     // Construct the destination file path
-    std::string dest_file_path = std::string(destination_dir) + "/" + file_name;
+    std::string dest_file_path = std::string(destination_dir) + "/" + safe_file_name;
 
-    // This eliminates the race condition between access() check and unlink() call
-
-    // Open the source file
-    std::ifstream src(source_file, std::ios::binary);
-    if (!src) {
-        SWUPDATEERR("Error: Could not open source file %s\n", source_file);
+    // Use O_NOFOLLOW to prevent symlink following (platform-specific)
+    // For cross-platform compatibility, we'll use additional validation
+    struct stat src_stat, dest_stat;
+    if (lstat(source_file, &src_stat) != 0 || !S_ISREG(src_stat.st_mode) || S_ISLNK(src_stat.st_mode)) {
+        SWUPDATEERR("Error: Source must be a regular file: %s\n", source_file);
         return false;
     }
 
-    // Open the destination file with trunc flag to overwrite if exists
-    std::ofstream dest(dest_file_path, std::ios::binary | std::ios::trunc);
-    if (!dest) {
-        SWUPDATEERR("Error: Could not open destination file %s\n", dest_file_path.c_str());
+    if (lstat(dest_file_path.c_str(), &dest_stat) == 0 && (!S_ISREG(dest_stat.st_mode) || S_ISLNK(dest_stat.st_mode))) {
+        SWUPDATEERR("Error: Destination is not a regular file\n");
         return false;
     }
 
-    if (src.peek() == std::ifstream::traits_type::eof()) {
-        SWUPDATEINFO("Source file is empty. Copying as empty file.\n");
+    const int sourceFd = open(source_file, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+    if (sourceFd < 0 || fstat(sourceFd, &src_stat) != 0 || !S_ISREG(src_stat.st_mode)) {
+        if (sourceFd >= 0)
+            close(sourceFd);
+        SWUPDATEERR("Error: Could not securely open source file %s\n", source_file);
+        return false;
     }
 
-    // Copy the file content
-    dest << src.rdbuf();
+    const int destinationFd = open(dest_file_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0644);
+    if (destinationFd < 0) {
+        close(sourceFd);
+        SWUPDATEERR("Error: Could not securely open destination file %s\n", dest_file_path.c_str());
+        return false;
+    }
 
-    // Check for actual I/O errors (ignore EOF)
-    if (src.bad() || dest.bad()) {
+    bool copied = true;
+    char buffer[8192];
+    ssize_t bytesRead;
+    while ((bytesRead = read(sourceFd, buffer, sizeof(buffer))) > 0) {
+        ssize_t offset = 0;
+        while (offset < bytesRead) {
+            const ssize_t bytesWritten = write(destinationFd, buffer + offset, bytesRead - offset);
+            if (bytesWritten <= 0) {
+                copied = false;
+                break;
+            }
+            offset += bytesWritten;
+        }
+        if (!copied)
+            break;
+    }
+    if (bytesRead < 0)
+        copied = false;
+
+    close(destinationFd);
+    close(sourceFd);
+    if (!copied) {
         SWUPDATEERR("Error: File copy failed due to I/O error.\n");
         return false;
     }
