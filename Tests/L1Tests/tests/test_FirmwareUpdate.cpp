@@ -1300,12 +1300,12 @@ TEST_F(FirmwareUpdateTest, CreateDirectory_RejectsTraversalAndSymlink)
 
     const char* target = "/tmp/firmware_update_directory_target";
     const char* link = "/tmp/firmware_update_directory_link";
-    unlink(link);
+    safeRemoveFile(link);
     rmdir(target);
     ASSERT_EQ(0, mkdir(target, 0755));
     ASSERT_EQ(0, symlink(target, link));
     EXPECT_FALSE(createDirectory(link));
-    unlink(link);
+    safeRemoveFile(link);
     rmdir(target);
 }
 
@@ -1315,8 +1315,8 @@ TEST_F(FirmwareUpdateTest, CopyFileToDirectory_RejectsSymlinksWithoutSideEffects
     const char* sourceLink = "/tmp/firmware_update_source_link";
     const char* destinationDirectory = "/tmp/firmware_update_destination";
     const std::string destination = std::string(destinationDirectory) + "/firmware_update_source";
-    unlink(sourceLink);
-    unlink(destination.c_str());
+    safeRemoveFile(sourceLink);
+    safeRemoveFile(destination.c_str());
     rmdir(destinationDirectory);
 
     std::ofstream sourceFile(source);
@@ -1337,9 +1337,9 @@ TEST_F(FirmwareUpdateTest, CopyFileToDirectory_RejectsSymlinksWithoutSideEffects
     unchanged >> content;
     EXPECT_EQ("protected-content", content);
 
-    unlink(destination.c_str());
-    unlink(sourceLink);
-    unlink(source);
+    safeRemoveFile(destination.c_str());
+    safeRemoveFile(sourceLink);
+    safeRemoveFile(source);
     rmdir(destinationDirectory);
 }
 
