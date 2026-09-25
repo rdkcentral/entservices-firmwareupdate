@@ -891,7 +891,9 @@ namespace WPEFramework {
                 flashThread.join();  // Ensure the thread has completed before main exits
             }
             // Start a new flashing thread
-            flashThread = std::thread(&WPEFramework::Plugin::FirmwareUpdateImplementation::flashImageThread, this, firmwareFd, canonicalFirmwarePath, firmwareType);
+            flashThread = std::thread([this, firmwareFd, canonicalFirmwarePath, firmwareType]() {
+                flashImageThread(firmwareFd, canonicalFirmwarePath, firmwareType);
+            });
             result.success = true;
             status =Core::ERROR_NONE;
 
