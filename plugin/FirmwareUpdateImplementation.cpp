@@ -719,6 +719,15 @@ namespace WPEFramework {
 #endif        
 
         // Thread function to initiate flashImage
+        void FirmwareUpdateImplementation::flashImageThread(std::string firmwareFilepath, std::string firmwareType) {
+            std::string canonicalPath;
+            std::string errorReason;
+            int firmwareFd = -1;
+            if (!isValidFirmwarePath(firmwareFilepath, canonicalPath, firmwareFd, errorReason))
+                return;
+            flashImageThread(firmwareFd, canonicalPath, firmwareType);
+        }
+
         void FirmwareUpdateImplementation::flashImageThread(int firmwareFd, std::string firmwareFilepath, std::string firmwareType) {
             // Lock mutex to ensure thread-safe execution of flashImage
             std::lock_guard<std::mutex> lock(flashMutex);

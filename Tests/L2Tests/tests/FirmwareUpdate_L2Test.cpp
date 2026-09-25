@@ -21,6 +21,7 @@
 #include <gmock/gmock.h>
 #include "L2Tests.h"
 #include "L2TestsMock.h"
+#include "FirmwareUpdateImplementation.h"
 #include <mutex>
 #include <condition_variable>
 #include <fstream>
