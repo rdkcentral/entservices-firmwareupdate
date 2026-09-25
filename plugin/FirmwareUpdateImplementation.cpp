@@ -23,6 +23,22 @@ std::atomic<bool> isFlashingInProgress(false);
 std::mutex flashMutex;
 std::mutex logMutex;
 void startProgressTimer() ;
+
+// PowerManager interface acquisition retry policy.
+static constexpr int POWERMGR_RETRY_INTERVAL_MS   = 200;
+static constexpr int POWERMGR_RETRY_COUNT         = 25;
+
+// Case 1 (flashing): initial hold must exceed the keep-alive refresh interval
+// with margin, else the refresh can lose the race against PowerManager's own
+// ack timeout (see RDKEMW-21447 timing fix).
+static constexpr int FLASH_HOLD_INITIAL_DELAY_SEC     = 300;
+static constexpr int FLASH_HOLD_REFRESH_INTERVAL_SEC  = 280;
+static constexpr int FLASH_HOLD_REFRESH_DELAY_SEC     = 600;
+
+// Case 2 (reboot/maintenance hold): 630s window, refreshed every 300s.
+static constexpr int REBOOT_HOLD_DELAY_SEC            = 630;
+static constexpr int REBOOT_HOLD_REFRESH_INTERVAL_SEC = 300;
+
 namespace WPEFramework {
     namespace Plugin {
         SERVICE_REGISTRATION(FirmwareUpdateImplementation, 1, 0);
@@ -91,8 +107,8 @@ namespace WPEFramework {
 
             _powerManager = PowerManagerInterfaceBuilder(_T("org.rdk.PowerManager"))
                                 .withIShell(mShell)
-                                .withRetryIntervalMS(200)
-                                .withRetryCount(25)
+                                .withRetryIntervalMS(POWERMGR_RETRY_INTERVAL_MS)
+                                .withRetryCount(POWERMGR_RETRY_COUNT)
                                 .createInterface();
             if (!_powerManager) {
                 SWUPDATEERR("GSK: Failed to get PowerManager instance");
@@ -164,9 +180,11 @@ namespace WPEFramework {
                     std::lock_guard<std::mutex> lock(_powerModeMutex);
                     _pendingPowerTransactionId = transactionId;
                 }
-                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 300);
-                SWUPDATEINFO("GSK: [Case 1] Deferred deepsleep for flash txnId=%d (initial 600s, keep-alive will refresh)", transactionId);
-                startPowerModeKeepAlive(transactionId, 300, 600, []() { return isFlashingInProgress.load(); });
+                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, FLASH_HOLD_INITIAL_DELAY_SEC);
+                SWUPDATEINFO("GSK: [Case 1] Deferred deepsleep for flash txnId=%d (initial %ds, keep-alive will refresh)",
+                    transactionId, FLASH_HOLD_INITIAL_DELAY_SEC);
+                startPowerModeKeepAlive(transactionId, FLASH_HOLD_REFRESH_INTERVAL_SEC, FLASH_HOLD_REFRESH_DELAY_SEC,
+                    []() { return isFlashingInProgress.load(); });
             } else if (_rebootPending.load() || _maintenancePending.load()) {
                 {
                     std::lock_guard<std::mutex> lock(_powerModeMutex);
@@ -174,10 +192,10 @@ namespace WPEFramework {
                 }
                 SWUPDATEINFO("GSK: [Case 2 late] Reboot/maintenance pending maint=%d reboot=%d; delaying deepsleep txnId=%d",
                     _maintenancePending.load(), _rebootPending.load(), transactionId);
-                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 630);
+                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, REBOOT_HOLD_DELAY_SEC);
                 // Keep refreshing the reboot-hold window; a later, different txnId (new event)
                 // will stop this loop before it can send a delay for the now-stale id.
-                startPowerModeKeepAlive(transactionId, 300, 630,
+                startPowerModeKeepAlive(transactionId, REBOOT_HOLD_REFRESH_INTERVAL_SEC, REBOOT_HOLD_DELAY_SEC,
                     [this]() { return _rebootPending.load() || _maintenancePending.load(); });
             } else {
                 SWUPDATEINFO("GSK: No flash in progress -> ack deepsleep txnId=%d", transactionId);
@@ -257,9 +275,9 @@ namespace WPEFramework {
             if (!isComplete) {
                 // Case 2: success + reboot=true -> hold deepsleep for the reboot window, refreshed
                 // periodically so the hold survives past a single 630s deadline.
-                SWUPDATEINFO("GSK: [Case 2] Holding deepsleep 630s for reboot txnId=%d", transactionId);
-                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, 630);
-                startPowerModeKeepAlive(transactionId, 300, 630,
+                SWUPDATEINFO("GSK: [Case 2] Holding deepsleep %ds for reboot txnId=%d", REBOOT_HOLD_DELAY_SEC, transactionId);
+                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, REBOOT_HOLD_DELAY_SEC);
+                startPowerModeKeepAlive(transactionId, REBOOT_HOLD_REFRESH_INTERVAL_SEC, REBOOT_HOLD_DELAY_SEC,
                     [this]() { return _rebootPending.load() || _maintenancePending.load(); });
             } else {
                 // Case 3 (success + reboot=false) or Case 4 (failure) -> let deepsleep proceed.
@@ -729,7 +747,7 @@ namespace WPEFramework {
 #if 1 // Simulation Critical reboot case code.
                     SWUPDATEINFO("GSK: USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
                     if (strncmp(reboot_flag, "true", 4) == 0 && upgrade_type != PDRI_UPGRADE) {
-                        SWUPDATEINFO("GSK: USB success + reboot=true -> hold deepsleep 630s; UI owns reboot");
+                        SWUPDATEINFO("GSK: USB success + reboot=true -> hold deepsleep %ds; UI owns reboot", REBOOT_HOLD_DELAY_SEC);
                         completePowerModeChange(false);
                     } else {
                         SWUPDATEINFO("GSK: USB success + reboot=false/PDRI -> ack deferred deepsleep");
