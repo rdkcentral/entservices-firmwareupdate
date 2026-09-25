@@ -113,6 +113,7 @@ namespace Plugin {
         int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, const char *reboot_flag ,const char *initiated_type);
         //void updateSecurityStage ();
         void dispatchAndUpdateEvent (string state ,string substate);
+        static bool isValidFirmwarePath(const std::string& filepath, std::string& canonicalPath, int& firmwareFd, std::string& errorReason);
 
         // IConfiguration interface
         uint32_t Configure(PluginHost::IShell* shell);
@@ -127,8 +128,6 @@ namespace Plugin {
         
         void InitializeIARM();
         void DeinitializeIARM();
-        
-        static bool isValidFirmwarePath(const std::string& filepath, std::string& canonicalPath, int& firmwareFd, std::string& errorReason);
 
         friend class Job;
     };
