@@ -18,10 +18,53 @@
  */
 
 #include "FirmwareUpdateImplementation.h"
+#include <limits.h>
+#include <stdlib.h>
+#include <cstring>
+#include <sys/stat.h>
 
 std::atomic<bool> isFlashingInProgress(false);
 std::mutex flashMutex;
 std::mutex logMutex;
+
+// Validate firmware path to prevent path traversal (RDKEMW-24513)
+bool isValidFirmwarePath(const std::string& firmwareFilepath)
+{
+    if (firmwareFilepath.empty() || firmwareFilepath[0] != '/' || firmwareFilepath.find("..") != std::string::npos)
+    {
+        return false;
+    }
+
+    struct stat pathStat;
+    if (lstat(firmwareFilepath.c_str(), &pathStat) != 0 || !S_ISREG(pathStat.st_mode) || S_ISLNK(pathStat.st_mode))
+    {
+        return false;
+    }
+
+    char resolvedPath[PATH_MAX];
+    if (realpath(firmwareFilepath.c_str(), resolvedPath) == nullptr)
+    {
+        return false;
+    }
+
+    const std::string resolved(resolvedPath);
+    const std::vector<std::string> safePrefixes = {
+        "/tmp/",
+        "/opt/",
+        "/var/tmp/"
+    };
+
+    for (const auto& prefix : safePrefixes)
+    {
+        if (resolved.compare(0, prefix.length(), prefix) == 0)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void startProgressTimer() ;
 namespace WPEFramework {
     namespace Plugin {
@@ -718,6 +761,16 @@ namespace WPEFramework {
                 snprintf(fwdls.status, sizeof(fwdls.status), "Status|Failure\n");
                 snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
                 snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|firmwareFilepath is empty\n");
+                updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type.c_str());
+                status = Core::ERROR_INVALID_PARAMETER;
+                return status;
+            }
+            else if (!isValidFirmwarePath(firmwareFilepath))
+            {
+                SWUPDATEERR("Invalid firmware path (traversal or unsafe): %s", firmwareFilepath.c_str());
+                snprintf(fwdls.status, sizeof(fwdls.status), "Status|Failure\n");
+                snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
+                snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|Invalid firmware path\n");
                 updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type.c_str());
                 status = Core::ERROR_INVALID_PARAMETER;
                 return status;
