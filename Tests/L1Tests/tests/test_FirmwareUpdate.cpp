@@ -1299,7 +1299,7 @@ TEST_F(FirmwareUpdateTest, ValidatedFirmwareHandleSurvivesPathReplacement)
     std::string canonicalPath;
     std::string errorReason;
     int firmwareFd = -1;
-    ASSERT_TRUE(FirmwareUpdateImplementation::isValidFirmwarePath(firmwarePath, canonicalPath, firmwareFd, errorReason));
+    ASSERT_TRUE(WPEFramework::Plugin::FirmwareUpdateImplementation::isValidFirmwarePath(firmwarePath, canonicalPath, firmwareFd, errorReason));
     ASSERT_GE(firmwareFd, 0);
     ASSERT_EQ(0, rename(firmwarePath, movedPath));
     {
