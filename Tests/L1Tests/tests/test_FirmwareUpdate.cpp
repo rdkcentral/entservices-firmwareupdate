@@ -848,7 +848,7 @@ TEST_F(FirmwareUpdateTest, FirmwarePathPolicy)
 {
     const char* validPath = "/tmp/firmware_update_valid_image.bin";
     const char* symlinkPath = "/tmp/firmware_update_symlink_image.bin";
-    unlink(symlinkPath);
+    safeRemoveFile(symlinkPath);
     std::ofstream image(validPath);
     image << "firmware";
     image.close();
@@ -861,8 +861,8 @@ TEST_F(FirmwareUpdateTest, FirmwarePathPolicy)
     EXPECT_FALSE(isValidFirmwarePath("/etc/hosts"));
     EXPECT_FALSE(isValidFirmwarePath("/tmp/nonexistent_firmware_image.bin"));
 
-    unlink(symlinkPath);
-    unlink(validPath);
+    safeRemoveFile(symlinkPath);
+    safeRemoveFile(validPath);
 }
 
 TEST_F(FirmwareUpdateTest, Stress_MultipleGetUpdateState)
