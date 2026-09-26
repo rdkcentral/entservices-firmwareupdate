@@ -254,3 +254,52 @@ TEST_F(FirmwareUpdateTest,FirmwareUpdate_with_imageFlasher)
         sleep(10);
     }
 }
+
+TEST_F(FirmwareUpdateTest,RejectsSensitivePath)
+{
+    JsonObject params;
+    JsonObject result;
+    params["firmwareFilepath"] = "/etc/passwd";
+    params["firmwareType"] = "PCI";
+
+    const uint32_t status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
+
+    EXPECT_NE(status, Core::ERROR_NONE);
+}
+
+TEST_F(FirmwareUpdateTest,RejectsPathTraversal)
+{
+    JsonObject params;
+    JsonObject result;
+    params["firmwareFilepath"] = "/tmp/../etc/passwd";
+    params["firmwareType"] = "PCI";
+
+    const uint32_t status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
+
+    EXPECT_NE(status, Core::ERROR_NONE);
+}
+
+TEST_F(FirmwareUpdateTest,RejectsSymlink)
+{
+    std::ofstream file("/tmp/test_firmware.bin");
+    symlink("/etc/passwd", "/tmp/symlink_firmware.bin");
+    
+    uint32_t status = Core::ERROR_GENERAL;
+    JsonObject params;
+    JsonObject result;
+
+    if (file.is_open()) {
+        file << "test firmware";
+        file.close();
+        
+        params["firmwareFilepath"] = "/tmp/symlink_firmware.bin";
+        params["firmwareType"] = "PCI";
+
+        status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
+        
+        EXPECT_NE(status, Core::ERROR_NONE);
+        
+        unlink("/tmp/test_firmware.bin");
+        unlink("/tmp/symlink_firmware.bin");
+    }
+}
