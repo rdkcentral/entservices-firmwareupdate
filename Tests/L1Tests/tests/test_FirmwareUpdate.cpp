@@ -135,7 +135,6 @@ extern string deviceSpecificRegexBin();
 extern string deviceSpecificRegexPath();
 extern bool createDirectory(const std::string &path);
 extern bool copyFileToDirectory(const char *source_file, const char *destination_dir);
-extern bool isValidFirmwarePath(const std::string& firmwareFilepath);
 extern bool FirmwareStatus(std::string& state, std::string& substate, const std::string& mode);
 extern std::string GetCurrentTimestamp();
 extern std::string readProperty(std::string filename, std::string property, std::string delimiter);
@@ -854,15 +853,46 @@ TEST_F(FirmwareUpdateTest, FirmwarePathPolicy)
     image.close();
     ASSERT_EQ(0, symlink(validPath, symlinkPath));
 
-    EXPECT_TRUE(isValidFirmwarePath(validPath));
-    EXPECT_FALSE(isValidFirmwarePath(symlinkPath));
-    EXPECT_FALSE(isValidFirmwarePath("/tmp/../etc/hosts"));
-    EXPECT_FALSE(isValidFirmwarePath("relative/image.bin"));
-    EXPECT_FALSE(isValidFirmwarePath("/etc/hosts"));
-    EXPECT_FALSE(isValidFirmwarePath("/tmp/nonexistent_firmware_image.bin"));
+    auto isValid = [](const std::string& path) {
+        std::string canonicalPath;
+        std::string errorReason;
+        int firmwareFd = -1;
+        const bool valid = FirmwareUpdateImplementation::isValidFirmwarePath(path, canonicalPath, firmwareFd, errorReason);
+        if (firmwareFd >= 0)
+            close(firmwareFd);
+        return valid;
+    };
+    EXPECT_TRUE(isValid(validPath));
+    EXPECT_FALSE(isValid(symlinkPath));
+    EXPECT_FALSE(isValid("/tmp/../etc/hosts"));
+    EXPECT_FALSE(isValid("relative/image.bin"));
+    EXPECT_FALSE(isValid("/etc/hosts"));
+    EXPECT_FALSE(isValid("/tmp/nonexistent_firmware_image.bin"));
 
     safeRemoveFile(symlinkPath);
     safeRemoveFile(validPath);
+}
+
+TEST_F(FirmwareUpdateTest, ValidatedFirmwareHandleSurvivesPathReplacement)
+{
+    const char* firmwarePath = "/tmp/firmware_handle_test.bin";
+    const char* movedPath = "/tmp/firmware_handle_test.original";
+    safeRemoveFile(firmwarePath);
+    safeRemoveFile(movedPath);
+    { std::ofstream file(firmwarePath); file << "validated-content"; }
+    std::string canonicalPath;
+    std::string errorReason;
+    int firmwareFd = -1;
+    ASSERT_TRUE(FirmwareUpdateImplementation::isValidFirmwarePath(firmwarePath, canonicalPath, firmwareFd, errorReason));
+    ASSERT_EQ(0, rename(firmwarePath, movedPath));
+    { std::ofstream replacement(firmwarePath); replacement << "replacement-content"; }
+    char content[32] = {};
+    ASSERT_EQ(0, lseek(firmwareFd, 0, SEEK_SET));
+    EXPECT_GT(read(firmwareFd, content, sizeof(content) - 1), 0);
+    EXPECT_STREQ("validated-content", content);
+    close(firmwareFd);
+    safeRemoveFile(firmwarePath);
+    safeRemoveFile(movedPath);
 }
 
 TEST_F(FirmwareUpdateTest, Stress_MultipleGetUpdateState)

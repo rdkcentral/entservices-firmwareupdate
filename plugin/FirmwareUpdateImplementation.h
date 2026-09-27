@@ -109,6 +109,8 @@ namespace Plugin {
         void startProgressTimer() ;
         int flashImage(const char *server_url, const char *upgrade_file, const char *reboot_flag, const char *proto, int upgrade_type, const char *maint ,const char *initiated_type ,const char * codebig) ;
         void flashImageThread(std::string firmwareFilepath,std::string firmwareType) ;
+        void flashImageThread(int firmwareFd, std::string firmwareFilepath, std::string firmwareType) ;
+        static bool isValidFirmwarePath(const std::string& filepath, std::string& canonicalPath, int& firmwareFd, std::string& errorReason);
         int postFlash(const char *maint, const char *upgrade_file, int upgrade_type, const char *reboot_flag ,const char *initiated_type);
         //void updateSecurityStage ();
         void dispatchAndUpdateEvent (string state ,string substate);
