@@ -857,7 +857,7 @@ TEST_F(FirmwareUpdateTest, FirmwarePathPolicy)
         std::string canonicalPath;
         std::string errorReason;
         int firmwareFd = -1;
-        const bool valid = FirmwareUpdateImplementation::isValidFirmwarePath(path, canonicalPath, firmwareFd, errorReason);
+        const bool valid = WPEFramework::Plugin::FirmwareUpdateImplementation::isValidFirmwarePath(path, canonicalPath, firmwareFd, errorReason);
         if (firmwareFd >= 0)
             close(firmwareFd);
         return valid;
@@ -883,7 +883,7 @@ TEST_F(FirmwareUpdateTest, ValidatedFirmwareHandleSurvivesPathReplacement)
     std::string canonicalPath;
     std::string errorReason;
     int firmwareFd = -1;
-    ASSERT_TRUE(FirmwareUpdateImplementation::isValidFirmwarePath(firmwarePath, canonicalPath, firmwareFd, errorReason));
+    ASSERT_TRUE(WPEFramework::Plugin::FirmwareUpdateImplementation::isValidFirmwarePath(firmwarePath, canonicalPath, firmwareFd, errorReason));
     ASSERT_EQ(0, rename(firmwarePath, movedPath));
     { std::ofstream replacement(firmwarePath); replacement << "replacement-content"; }
     char content[32] = {};
