@@ -18,13 +18,62 @@
  */
 
 #include "FirmwareUpdateImplementation.h"
+#include <limits.h>
+#include <stdlib.h>
+#include <cstring>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 std::atomic<bool> isFlashingInProgress(false);
 std::mutex flashMutex;
 std::mutex logMutex;
+
 void startProgressTimer() ;
 namespace WPEFramework {
     namespace Plugin {
+        bool FirmwareUpdateImplementation::isValidFirmwarePath(const std::string& filepath, std::string& canonicalPath, int& firmwareFd, std::string& errorReason)
+        {
+            struct stat pathInfo;
+            if (lstat(filepath.c_str(), &pathInfo) != 0 || S_ISLNK(pathInfo.st_mode))
+            {
+                errorReason = "Firmware path must be an existing non-symlink";
+                return false;
+            }
+            char resolved[PATH_MAX];
+            if (realpath(filepath.c_str(), resolved) == nullptr)
+            {
+                errorReason = "Firmware path cannot be resolved";
+                return false;
+            }
+            canonicalPath.assign(resolved);
+            const char* safePrefixes[] = { "/tmp/", "/opt/", "/var/tmp/" };
+            bool safe = false;
+            for (const char* prefix : safePrefixes)
+            {
+                if (canonicalPath.compare(0, strlen(prefix), prefix) == 0)
+                {
+                    safe = true;
+                    break;
+                }
+            }
+            if (!safe)
+            {
+                errorReason = "Firmware path is outside trusted roots";
+                return false;
+            }
+            firmwareFd = open(canonicalPath.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+            if (firmwareFd < 0 || fstat(firmwareFd, &pathInfo) != 0 || !S_ISREG(pathInfo.st_mode))
+            {
+                if (firmwareFd >= 0)
+                    close(firmwareFd);
+                firmwareFd = -1;
+                errorReason = "Firmware path cannot be opened safely";
+                return false;
+            }
+            return true;
+        }
+
         SERVICE_REGISTRATION(FirmwareUpdateImplementation, 1, 0);
 
         FirmwareUpdateImplementation::FirmwareUpdateImplementation()
@@ -651,10 +700,19 @@ namespace WPEFramework {
 
         // Thread function to initiate flashImage
         void FirmwareUpdateImplementation::flashImageThread(std::string firmwareFilepath,std::string firmwareType) {
+            std::string canonicalPath;
+            std::string errorReason;
+            int firmwareFd = -1;
+            if (!isValidFirmwarePath(firmwareFilepath, canonicalPath, firmwareFd, errorReason))
+                return;
+            flashImageThread(firmwareFd, canonicalPath, firmwareType);
+        }
+
+        void FirmwareUpdateImplementation::flashImageThread(int firmwareFd, std::string firmwareFilepath, std::string firmwareType) {
             // Lock mutex to ensure thread-safe execution of flashImage
             std::lock_guard<std::mutex> lock(flashMutex);
 
-            std::string upgrade_file = firmwareFilepath;
+            std::string upgrade_file = "/proc/self/fd/" + std::to_string(firmwareFd);
             int upgrade_type = PCI_UPGRADE;
             if (firmwareType == "DRI")
             {
@@ -677,7 +735,7 @@ namespace WPEFramework {
 
             if(std::string(proto) == "usb")
             {
-                if (!copyFileToDirectory(upgrade_file.c_str(), USB_TMP_COPY)) {
+                if (!copyFileToDirectory(upgrade_file.c_str(), USB_TMP_COPY, name.c_str())) {
                     SWUPDATEERR("File copy operation failed.\n");
                     dispatchAndUpdateEvent(_VALIDATION_FAILED,_FIRMWARE_NOT_FOUND);
                     isFlashingInProgress = false; // Reset the flag if exiting early
@@ -685,6 +743,7 @@ namespace WPEFramework {
                     snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
                     snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|File copy operation failed.\n");
                     updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type);
+                    close(firmwareFd);
 
                     return ;
                 }
@@ -699,6 +758,7 @@ namespace WPEFramework {
             //Note : flashImage() is combination of both rdkfwupdater/src/flash.c(Flashing part of deviceInitiatedFWDnld.sh) and Flashing part of userInitiatedFWDnld.sh . For now except upgrade_file ,upgrade_type all other param are passed with default value .other param useful when for future implementations
             // Call the actual flashing function
             flashImage(server_url, upgrade_file.c_str(), reboot_flag, proto, upgrade_type, maint ,initiated_type , codebig);
+            close(firmwareFd);
 
         }
 
@@ -722,15 +782,17 @@ namespace WPEFramework {
                 status = Core::ERROR_INVALID_PARAMETER;
                 return status;
             }
-            else if (!(Utils::fileExists(firmwareFilepath.c_str()))) {
-                SWUPDATEERR("firmwareFile is not present %s",firmwareFilepath.c_str());
-                SWUPDATEERR("Local image Download Failed"); //Existing marker
+            std::string canonicalFirmwarePath;
+            std::string pathError;
+            int firmwareFd = -1;
+            if (!isValidFirmwarePath(firmwareFilepath, canonicalFirmwarePath, firmwareFd, pathError))
+            {
+                SWUPDATEERR("Invalid firmware path: %s", pathError.c_str());
                 snprintf(fwdls.status, sizeof(fwdls.status), "Status|Failure\n");
                 snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
-                snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|firmwareFile is not present\n");
+                snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|Invalid firmware path\n");
                 updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type.c_str());
-                status = Core::ERROR_INVALID_PARAMETER;
-                return status;
+                return Core::ERROR_INVALID_PARAMETER;
             }
 
             if(firmwareType !=""){
@@ -740,6 +802,7 @@ namespace WPEFramework {
                     snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
                     snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|firmwareType must be either 'PCI' or 'DRI'.\n");
                     updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type.c_str());
+                    close(firmwareFd);
                     status = Core::ERROR_INVALID_PARAMETER;
                     return status;
                 }
@@ -751,12 +814,13 @@ namespace WPEFramework {
                 snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
                 snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|firmwareType is empty\n");
                 updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type.c_str());
+                close(firmwareFd);
                 status = Core::ERROR_INVALID_PARAMETER;
                 return status;
             }
 
-            string name = firmwareFilepath.substr(firmwareFilepath.find_last_of("/\\") + 1);
-            string path = firmwareFilepath.substr(0, firmwareFilepath.find_last_of("/\\") + 1);
+            string name = canonicalFirmwarePath.substr(canonicalFirmwarePath.find_last_of("/\\") + 1);
+            string path = canonicalFirmwarePath.substr(0, canonicalFirmwarePath.find_last_of("/\\") + 1);
 
             string currentFlashedImage = readProperty("/version.txt","imagename", ":") ;
             SWUPDATEINFO("currentFlashedImage : %s",currentFlashedImage.c_str());
@@ -779,6 +843,7 @@ namespace WPEFramework {
                 snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|No upgrade needed\n");
                 snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|No upgrade needed\n");
                 updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type.c_str());
+                close(firmwareFd);
                 status = ERROR_FIRMWAREUPDATE_UPTODATE;
                 return status;
             }
@@ -792,6 +857,7 @@ namespace WPEFramework {
                 snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
                 snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|Flashing is already in progress\n");
                 updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type.c_str());
+                close(firmwareFd);
                 status = ERROR_FIRMWAREUPDATE_INPROGRESS;
                 return status;
             }
@@ -801,7 +867,9 @@ namespace WPEFramework {
                 flashThread.join();  // Ensure the thread has completed before main exits
             }
             // Start a new flashing thread
-            flashThread = std::thread(&WPEFramework::Plugin::FirmwareUpdateImplementation::flashImageThread, this, firmwareFilepath, firmwareType);
+            flashThread = std::thread([this, firmwareFd, canonicalFirmwarePath, firmwareType]() {
+                flashImageThread(firmwareFd, canonicalFirmwarePath, firmwareType);
+            });
             result.success = true;
             status =Core::ERROR_NONE;
 
@@ -1373,18 +1441,25 @@ bool copyFileToDirectory(const char *source_file, const char *destination_dir) {
         return false;
     }
 
+    const char *file_name = strrchr(source_file, '/');
+    file_name = file_name ? file_name + 1 : source_file;
+    return copyFileToDirectory(source_file, destination_dir, file_name);
+}
+
+bool copyFileToDirectory(const char *source_file, const char *destination_dir, const char *destination_name) {
+    if (!source_file || !destination_dir || !destination_name || destination_name[0] == '\0' || strchr(destination_name, '/')) {
+        SWUPDATEERR("Invalid copy input.\n");
+        return false;
+    }
+
     // Ensure the destination directory exists
     if (!createDirectory(destination_dir)) {
         SWUPDATEERR("Failed to create or access directory: %s\n", destination_dir);
         return false;
     }
 
-    // Extract file name from the source file path
-    const char *file_name = strrchr(source_file, '/');
-    file_name = file_name ? file_name + 1 : source_file;
-
     // Construct the destination file path
-    std::string dest_file_path = std::string(destination_dir) + "/" + file_name;
+    std::string dest_file_path = std::string(destination_dir) + "/" + destination_name;
 
     // This eliminates the race condition between access() check and unlink() call
 

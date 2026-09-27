@@ -843,6 +843,58 @@ TEST_F(FirmwareUpdateTest, UpdateFirmware_PathTraversal)
     EXPECT_EQ(Core::ERROR_INVALID_PARAMETER, handler.Invoke(connection, _T("updateFirmware"), request, response));
 }
 
+TEST_F(FirmwareUpdateTest, FirmwarePathPolicy)
+{
+    const char* validPath = "/tmp/firmware_update_valid_image.bin";
+    const char* symlinkPath = "/tmp/firmware_update_symlink_image.bin";
+    safeRemoveFile(symlinkPath);
+    std::ofstream image(validPath);
+    image << "firmware";
+    image.close();
+    ASSERT_EQ(0, symlink(validPath, symlinkPath));
+
+    auto isValid = [](const std::string& path) {
+        std::string canonicalPath;
+        std::string errorReason;
+        int firmwareFd = -1;
+        const bool valid = WPEFramework::Plugin::FirmwareUpdateImplementation::isValidFirmwarePath(path, canonicalPath, firmwareFd, errorReason);
+        if (firmwareFd >= 0)
+            close(firmwareFd);
+        return valid;
+    };
+    EXPECT_TRUE(isValid(validPath));
+    EXPECT_FALSE(isValid(symlinkPath));
+    EXPECT_FALSE(isValid("/tmp/../etc/hosts"));
+    EXPECT_FALSE(isValid("relative/image.bin"));
+    EXPECT_FALSE(isValid("/etc/hosts"));
+    EXPECT_FALSE(isValid("/tmp/nonexistent_firmware_image.bin"));
+
+    safeRemoveFile(symlinkPath);
+    safeRemoveFile(validPath);
+}
+
+TEST_F(FirmwareUpdateTest, ValidatedFirmwareHandleSurvivesPathReplacement)
+{
+    const char* firmwarePath = "/tmp/firmware_handle_test.bin";
+    const char* movedPath = "/tmp/firmware_handle_test.original";
+    safeRemoveFile(firmwarePath);
+    safeRemoveFile(movedPath);
+    { std::ofstream file(firmwarePath); file << "validated-content"; }
+    std::string canonicalPath;
+    std::string errorReason;
+    int firmwareFd = -1;
+    ASSERT_TRUE(WPEFramework::Plugin::FirmwareUpdateImplementation::isValidFirmwarePath(firmwarePath, canonicalPath, firmwareFd, errorReason));
+    ASSERT_EQ(0, rename(firmwarePath, movedPath));
+    { std::ofstream replacement(firmwarePath); replacement << "replacement-content"; }
+    char content[32] = {};
+    ASSERT_EQ(0, lseek(firmwareFd, 0, SEEK_SET));
+    EXPECT_GT(read(firmwareFd, content, sizeof(content) - 1), 0);
+    EXPECT_STREQ("validated-content", content);
+    close(firmwareFd);
+    safeRemoveFile(firmwarePath);
+    safeRemoveFile(movedPath);
+}
+
 TEST_F(FirmwareUpdateTest, Stress_MultipleGetUpdateState)
 {
     for (int i = 0; i < 10; i++) {

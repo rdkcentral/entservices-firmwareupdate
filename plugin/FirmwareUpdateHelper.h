@@ -248,6 +248,7 @@ string deviceSpecificRegexBin();
 string deviceSpecificRegexPath();
 bool createDirectory(const std::string &path) ;
 bool copyFileToDirectory(const char *source_file, const char *destination_dir) ;
+bool copyFileToDirectory(const char *source_file, const char *destination_dir, const char *destination_name) ;
 bool FirmwareStatus(std::string& state, std::string& substate, const std::string& mode) ;
 std::string readProperty( std::string filename,std::string property, std::string delimiter) ;
 
