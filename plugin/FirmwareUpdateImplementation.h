@@ -166,7 +166,11 @@ namespace Plugin {
         std::atomic<bool> _powerModeKeepAliveRun;
         std::atomic<bool> _rebootPending;
         std::atomic<bool> _maintenancePending;
+        // Owned by the keep-alive thread; only written while that thread is joined.
+        std::function<bool()> _powerModeKeepAliveStillPending;
         std::thread _powerModeKeepAliveThread;
+        // createInterface() retries with blocking sleeps, so it must not run on the activation thread.
+        std::thread _powerManagerInitThread;
         // Core::Sink prevents deletion when PowerManager releases its reference.
         Core::Sink<PowerModeNotification> _powerModeNotification;
         

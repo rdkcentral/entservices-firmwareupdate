@@ -423,7 +423,7 @@ TEST_F(FirmwareUpdateTest, FlashImageFailureUpdatesState)
 TEST_F(FirmwareUpdateTest, PowerModePreChange_IgnoresNonDeepSleepTransition)
 {
     ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
-    Plugin::FirmwareUpdateImplementation::PowerModeNotification notification(FirmwareUpdateImpl.operator->());
+    Core::Sink<Plugin::FirmwareUpdateImplementation::PowerModeNotification> notification(FirmwareUpdateImpl.operator->());
 
     notification.OnPowerModePreChange(
         Exchange::IPowerManager::POWER_STATE_ON,
@@ -435,7 +435,7 @@ TEST_F(FirmwareUpdateTest, PowerModePreChange_IgnoresNonDeepSleepTransition)
 TEST_F(FirmwareUpdateTest, PowerModePreChange_HandlesStandbyToDeepSleep)
 {
     ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
-    Plugin::FirmwareUpdateImplementation::PowerModeNotification notification(FirmwareUpdateImpl.operator->());
+    Core::Sink<Plugin::FirmwareUpdateImplementation::PowerModeNotification> notification(FirmwareUpdateImpl.operator->());
 
     notification.OnPowerModePreChange(
         Exchange::IPowerManager::POWER_STATE_STANDBY,

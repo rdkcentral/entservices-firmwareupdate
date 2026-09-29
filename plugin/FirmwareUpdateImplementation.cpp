@@ -85,6 +85,9 @@ namespace WPEFramework {
                 flashThread.join();  // Ensure the thread has completed before main exits
             }
             stopPowerModeKeepAlive();
+            if (_powerManagerInitThread.joinable()) {
+                _powerManagerInitThread.join();
+            }
             unregisterPowerManager();
             mShell = nullptr;
             DeinitializeIARM();
@@ -209,15 +212,16 @@ namespace WPEFramework {
             // Stop any previous keep-alive first so txnId ownership is single-writer; this is what
             // aborts refreshing a stale id once a new pre-change event supersedes it.
             stopPowerModeKeepAlive();
+            _powerModeKeepAliveStillPending = std::move(stillPending);
             _powerModeKeepAliveRun = true;
-            _powerModeKeepAliveThread = std::thread([this, transactionId, refreshIntervalSec, delaySec, stillPending]() {
+            _powerModeKeepAliveThread = std::thread([this, transactionId, refreshIntervalSec, delaySec]() {
                 SWUPDATEINFO("KeepAlive started txnId=%d", transactionId);
-                while (_powerModeKeepAliveRun.load() && stillPending()) {
+                while (_powerModeKeepAliveRun.load() && _powerModeKeepAliveStillPending()) {
                     for (int i = 0; i < refreshIntervalSec; ++i) {
-                        if (!_powerModeKeepAliveRun.load() || !stillPending()) break;
+                        if (!_powerModeKeepAliveRun.load() || !_powerModeKeepAliveStillPending()) break;
                         std::this_thread::sleep_for(std::chrono::seconds(1));
                     }
-                    if (!_powerModeKeepAliveRun.load() || !stillPending()) break;
+                    if (!_powerModeKeepAliveRun.load() || !_powerModeKeepAliveStillPending()) break;
                     if (_powerManager && _powerModeClientRegistered) {
                         _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, delaySec);
                         SWUPDATEINFO("KeepAlive refreshed delay txnId=%d (%ds)", transactionId, delaySec);
@@ -844,7 +848,10 @@ namespace WPEFramework {
             uint32_t result = Core::ERROR_NONE;
             ASSERT(shell != nullptr);
             mShell = shell;
-            registerPowerManager();
+            if (_powerManagerInitThread.joinable()) {
+                _powerManagerInitThread.join();
+            }
+            _powerManagerInitThread = std::thread([this]() { registerPowerManager(); });
             return result;
         }
 
