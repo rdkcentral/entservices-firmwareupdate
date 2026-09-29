@@ -254,3 +254,36 @@ TEST_F(FirmwareUpdateTest,FirmwareUpdate_with_imageFlasher)
         sleep(10);
     }
 }
+
+TEST_F(FirmwareUpdateTest, FirmwareUpdate_FlasherFailureWorkflow)
+{
+    const char* filePath = "/tmp/rdkemw21447_failure.bin";
+    std::ofstream file(filePath);
+    std::ofstream versionFile("/version.txt");
+    std::ofstream devicePropertiesFile("/etc/device.properties");
+    std::ofstream imageFlasher("/lib/rdk/imageFlasher.sh");
+
+    ASSERT_TRUE(file.is_open());
+    ASSERT_TRUE(versionFile.is_open());
+    ASSERT_TRUE(devicePropertiesFile.is_open());
+    ASSERT_TRUE(imageFlasher.is_open());
+
+    file << "failure image";
+    versionFile << "imagename:old_image";
+    devicePropertiesFile << "DEVICE_TYPE=mediaclient\nCPU_ARCH=ARM\nDIFW_PATH=/opt/CDL\n";
+    imageFlasher << "#!/bin/sh\nexit 1\n";
+    file.close();
+    versionFile.close();
+    devicePropertiesFile.close();
+    imageFlasher.close();
+
+    JsonObject params;
+    JsonObject result;
+    params["firmwareFilepath"] = filePath;
+    params["firmwareType"] = "PCI";
+
+    EXPECT_EQ(Core::ERROR_NONE,
+        InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result));
+    sleep(2);
+    EXPECT_TRUE(result["success"].Boolean());
+}

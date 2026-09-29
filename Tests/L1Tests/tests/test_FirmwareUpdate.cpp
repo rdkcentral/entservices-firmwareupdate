@@ -383,6 +383,67 @@ TEST_F(FirmwareUpdateTest, UpdateFirmware_ValidPCI_Success)
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 }
 
+TEST_F(FirmwareUpdateTest, UpdateFirmware_RejectsConcurrentFlash)
+{
+    createTestFirmwareFile();
+    const string request = "{\"firmwareFilepath\":\"" + TEST_FIRMWARE_PATH + "\",\"firmwareType\":\"PCI\"}";
+
+    EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("updateFirmware"), request, response));
+    EXPECT_EQ(ERROR_FIRMWAREUPDATE_INPROGRESS,
+        handler.Invoke(connection, _T("updateFirmware"), request, response));
+}
+
+TEST_F(FirmwareUpdateTest, FlashImageFailureUpdatesState)
+{
+    ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
+    const char* imagePath = "/tmp/firmware_failure.bin";
+    std::ofstream image(imagePath);
+    image << "failure image";
+    image.close();
+
+    EXPECT_CALL(*p_wrapsImplMock, v_secure_system(::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(1));
+
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_BroadcastEvent)
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly([](const char*, int, void*, size_t) {
+            return IARM_RESULT_SUCCESS;
+        });
+
+    FirmwareUpdateImpl->flashImage("", imagePath, "false", "http", PCI_UPGRADE,
+        "false", "user", "false");
+
+    std::string state;
+    std::string substate;
+    EXPECT_TRUE(FirmwareStatus(state, substate, "read"));
+    EXPECT_EQ("FLASHING_FAILED", state);
+    safeRemoveFile(imagePath);
+}
+
+TEST_F(FirmwareUpdateTest, PowerModePreChange_IgnoresNonDeepSleepTransition)
+{
+    ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
+    Plugin::FirmwareUpdateImplementation::PowerModeNotification notification(FirmwareUpdateImpl.operator->());
+
+    notification.OnPowerModePreChange(
+        Exchange::IPowerManager::POWER_STATE_ON,
+        Exchange::IPowerManager::POWER_STATE_STANDBY,
+        1,
+        300);
+}
+
+TEST_F(FirmwareUpdateTest, PowerModePreChange_HandlesStandbyToDeepSleep)
+{
+    ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
+    Plugin::FirmwareUpdateImplementation::PowerModeNotification notification(FirmwareUpdateImpl.operator->());
+
+    notification.OnPowerModePreChange(
+        Exchange::IPowerManager::POWER_STATE_STANDBY,
+        Exchange::IPowerManager::POWER_STATE_STANDBY_DEEP_SLEEP,
+        2,
+        300);
+}
+
 // UpdateFirmware Tests - Parameter Validation
 TEST_F(FirmwareUpdateTest, UpdateFirmware_EmptyFilePath)
 {

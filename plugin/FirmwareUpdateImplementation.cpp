@@ -100,7 +100,7 @@ namespace WPEFramework {
 
         void FirmwareUpdateImplementation::registerPowerManager()
         {
-            SWUPDATEINFO("GSK: registerPowerManager entry mShell=%p existingRef=%d", mShell, static_cast<int>(static_cast<bool>(_powerManager)));
+            SWUPDATEINFO("registerPowerManager entry mShell=%p existingRef=%d", mShell, static_cast<int>(static_cast<bool>(_powerManager)));
             if (mShell == nullptr || _powerManager) {
                 return;
             }
@@ -111,7 +111,7 @@ namespace WPEFramework {
                                 .withRetryCount(POWERMGR_RETRY_COUNT)
                                 .createInterface();
             if (!_powerManager) {
-                SWUPDATEERR("GSK: Failed to get PowerManager instance");
+                SWUPDATEERR("Failed to get PowerManager instance");
                 return;
             }
 
@@ -124,16 +124,16 @@ namespace WPEFramework {
                 ? _powerManager->Register(preChange)
                 : Core::ERROR_GENERAL;
             if (regRc != Core::ERROR_NONE || addRc != Core::ERROR_NONE) {
-                SWUPDATEERR("GSK: PowerManager register failed regRc=%u addRc=%u", regRc, addRc);
+                SWUPDATEERR("PowerManager register failed regRc=%u addRc=%u", regRc, addRc);
                 unregisterPowerManager();
                 return;
             }
-            SWUPDATEINFO("GSK: PowerManager pre-change client registered id=%u", _powerModeClientId);
+            SWUPDATEINFO("PowerManager pre-change client registered id=%u", _powerModeClientId);
         }
 
         void FirmwareUpdateImplementation::unregisterPowerManager()
         {
-            SWUPDATEINFO("GSK: unregisterPowerManager entry hasRef=%d clientRegistered=%d clientId=%u",
+            SWUPDATEINFO("unregisterPowerManager entry hasRef=%d clientRegistered=%d clientId=%u",
                 static_cast<int>(static_cast<bool>(_powerManager)), _powerModeClientRegistered, _powerModeClientId);
             if (!_powerManager) {
                 return;
@@ -152,7 +152,7 @@ namespace WPEFramework {
             const Exchange::IPowerManager::PowerState newState, const int transactionId,
             const int stateChangeAfter)
         {
-            SWUPDATEINFO("GSK: OnPowerModePreChange cur=%d new=%d txnId=%d timeout=%d flashing=%d clientRegistered=%d",
+            SWUPDATEINFO("OnPowerModePreChange cur=%d new=%d txnId=%d timeout=%d flashing=%d clientRegistered=%d",
                 currentState, newState, transactionId, stateChangeAfter,
                 isFlashingInProgress.load(), _powerModeClientRegistered);
 
@@ -169,7 +169,7 @@ namespace WPEFramework {
                     std::lock_guard<std::mutex> lock(_powerModeMutex);
                     _pendingPowerTransactionId = -1;
                 }
-                SWUPDATEINFO("GSK: Skipping pre-change (not target transition or not registered)");
+                SWUPDATEINFO("Skipping pre-change (not target transition or not registered)");
                 return;
             }
 
@@ -181,7 +181,7 @@ namespace WPEFramework {
                     _pendingPowerTransactionId = transactionId;
                 }
                 _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, FLASH_HOLD_INITIAL_DELAY_SEC);
-                SWUPDATEINFO("GSK: [Case 1] Deferred deepsleep for flash txnId=%d (initial %ds, keep-alive will refresh)",
+                SWUPDATEINFO("[Case 1] Deferred deepsleep for flash txnId=%d (initial %ds, keep-alive will refresh)",
                     transactionId, FLASH_HOLD_INITIAL_DELAY_SEC);
                 startPowerModeKeepAlive(transactionId, FLASH_HOLD_REFRESH_INTERVAL_SEC, FLASH_HOLD_REFRESH_DELAY_SEC,
                     []() { return isFlashingInProgress.load(); });
@@ -190,7 +190,7 @@ namespace WPEFramework {
                     std::lock_guard<std::mutex> lock(_powerModeMutex);
                     _pendingPowerTransactionId = transactionId;
                 }
-                SWUPDATEINFO("GSK: [Case 2 late] Reboot/maintenance pending maint=%d reboot=%d; delaying deepsleep txnId=%d",
+                SWUPDATEINFO("[Case 2 late] Reboot/maintenance pending maint=%d reboot=%d; delaying deepsleep txnId=%d",
                     _maintenancePending.load(), _rebootPending.load(), transactionId);
                 _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, REBOOT_HOLD_DELAY_SEC);
                 // Keep refreshing the reboot-hold window; a later, different txnId (new event)
@@ -198,7 +198,7 @@ namespace WPEFramework {
                 startPowerModeKeepAlive(transactionId, REBOOT_HOLD_REFRESH_INTERVAL_SEC, REBOOT_HOLD_DELAY_SEC,
                     [this]() { return _rebootPending.load() || _maintenancePending.load(); });
             } else {
-                SWUPDATEINFO("GSK: No flash in progress -> ack deepsleep txnId=%d", transactionId);
+                SWUPDATEINFO("No flash in progress -> ack deepsleep txnId=%d", transactionId);
                 _powerManager->PowerModePreChangeComplete(_powerModeClientId, transactionId);
             }
         }
@@ -211,7 +211,7 @@ namespace WPEFramework {
             stopPowerModeKeepAlive();
             _powerModeKeepAliveRun = true;
             _powerModeKeepAliveThread = std::thread([this, transactionId, refreshIntervalSec, delaySec, stillPending]() {
-                SWUPDATEINFO("GSK: KeepAlive started txnId=%d", transactionId);
+                SWUPDATEINFO("KeepAlive started txnId=%d", transactionId);
                 while (_powerModeKeepAliveRun.load() && stillPending()) {
                     for (int i = 0; i < refreshIntervalSec; ++i) {
                         if (!_powerModeKeepAliveRun.load() || !stillPending()) break;
@@ -220,10 +220,10 @@ namespace WPEFramework {
                     if (!_powerModeKeepAliveRun.load() || !stillPending()) break;
                     if (_powerManager && _powerModeClientRegistered) {
                         _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, delaySec);
-                        SWUPDATEINFO("GSK: KeepAlive refreshed delay txnId=%d (%ds)", transactionId, delaySec);
+                        SWUPDATEINFO("KeepAlive refreshed delay txnId=%d (%ds)", transactionId, delaySec);
                     }
                 }
-                SWUPDATEINFO("GSK: KeepAlive exiting txnId=%d", transactionId);
+                SWUPDATEINFO("KeepAlive exiting txnId=%d", transactionId);
             });
         }
 
@@ -234,7 +234,7 @@ namespace WPEFramework {
                 _powerModeKeepAliveThread.join();
             }
             if (wasRunning) {
-                SWUPDATEINFO("GSK: KeepAlive stopped");
+                SWUPDATEINFO("KeepAlive stopped");
             }
         }
 
@@ -252,7 +252,7 @@ namespace WPEFramework {
                 // from a pre-change callback. Repeated terminal-path calls must not send a
                 // stale/invalid txnId back to PowerManager.
                 if (transactionId < 0) {
-                    SWUPDATEINFO("GSK: completePowerModeChange no-op (no valid deferred transaction)");
+                    SWUPDATEINFO("completePowerModeChange no-op (no valid deferred transaction)");
                     return;
                 }
 
@@ -262,26 +262,26 @@ namespace WPEFramework {
                     _maintenancePending = false;
                 }
             }
-            SWUPDATEINFO("GSK: completePowerModeChange isComplete=%d pendingTxnId=%d clientRegistered=%d hasRef=%d",
+            SWUPDATEINFO("completePowerModeChange isComplete=%d pendingTxnId=%d clientRegistered=%d hasRef=%d",
                 isComplete, transactionId, _powerModeClientRegistered,
                 static_cast<int>(static_cast<bool>(_powerManager)));
 
             // Only act on a deferred transition. Never force deep sleep on our own.
             if (!_powerManager || !_powerModeClientRegistered) {
-                SWUPDATEINFO("GSK: completePowerModeChange no-op (power manager unavailable)");
+                SWUPDATEINFO("completePowerModeChange no-op (power manager unavailable)");
                 return;
             }
 
             if (!isComplete) {
                 // Case 2: success + reboot=true -> hold deepsleep for the reboot window, refreshed
                 // periodically so the hold survives past a single 630s deadline.
-                SWUPDATEINFO("GSK: [Case 2] Holding deepsleep %ds for reboot txnId=%d", REBOOT_HOLD_DELAY_SEC, transactionId);
+                SWUPDATEINFO("[Case 2] Holding deepsleep %ds for reboot txnId=%d", REBOOT_HOLD_DELAY_SEC, transactionId);
                 _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, REBOOT_HOLD_DELAY_SEC);
                 startPowerModeKeepAlive(transactionId, REBOOT_HOLD_REFRESH_INTERVAL_SEC, REBOOT_HOLD_DELAY_SEC,
                     [this]() { return _rebootPending.load() || _maintenancePending.load(); });
             } else {
                 // Case 3 (success + reboot=false) or Case 4 (failure) -> let deepsleep proceed.
-                SWUPDATEINFO("GSK: [Case 3/4] Acking deepsleep transition txnId=%d", transactionId);
+                SWUPDATEINFO("[Case 3/4] Acking deepsleep transition txnId=%d", transactionId);
                 _powerManager->PowerModePreChangeComplete(_powerModeClientId, transactionId);
             }
         }
@@ -670,7 +670,7 @@ namespace WPEFramework {
 
                 // Reset flashing status
                 isFlashingInProgress = false;
-                SWUPDATEINFO("GSK: imageFlasher.sh returned ret=%d proto=%s upgrade_type=%d rebootPending=%d maintenancePending=%d",
+                SWUPDATEINFO("imageFlasher.sh returned ret=%d proto=%s upgrade_type=%d rebootPending=%d maintenancePending=%d",
                     ret, proto, upgrade_type, _rebootPending.load(), _maintenancePending.load());
 
                 // Wait for the timer thread to complete
@@ -712,7 +712,7 @@ namespace WPEFramework {
                 {                    
                     updateUpgradeFlag(0,2);
                 }
-                SWUPDATEINFO("GSK: Failure branch -> release deferred deepsleep (if any)");
+                SWUPDATEINFO("Failure branch -> release deferred deepsleep (if any)");
                 completePowerModeChange(true);
 
             } else if (true == mediaclient) {                
@@ -744,31 +744,31 @@ namespace WPEFramework {
                         fprintf(fp, "%s\n", file+1);
                         fclose(fp);
                     }
-#if 1 // Simulation Critical reboot case code.
-                    SWUPDATEINFO("GSK: USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
+#if 0 // Simulation Critical reboot case code.
+                    SWUPDATEINFO("USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
                     if (strncmp(reboot_flag, "true", 4) == 0 && upgrade_type != PDRI_UPGRADE) {
-                        SWUPDATEINFO("GSK: USB success + reboot=true -> hold deepsleep %ds; UI owns reboot", REBOOT_HOLD_DELAY_SEC);
+                        SWUPDATEINFO("USB success + reboot=true -> hold deepsleep %ds; UI owns reboot", REBOOT_HOLD_DELAY_SEC);
                         completePowerModeChange(false);
                     } else {
-                        SWUPDATEINFO("GSK: USB success + reboot=false/PDRI -> ack deferred deepsleep");
+                        SWUPDATEINFO("USB success + reboot=false/PDRI -> ack deferred deepsleep");
                         completePowerModeChange(true);
                     }
-                    SWUPDATEINFO("GSK: Entering postFlash: reboot_flag =%s, maint%s\n", reboot_flag, maint);
+                    SWUPDATEINFO("Entering postFlash: reboot_flag =%s, maint%s\n", reboot_flag, maint);
                     postFlash(maint, file+1, upgrade_type, reboot_flag ,initiated_type);
-                    SWUPDATEINFO("GSK: postFlash returned");
+                    SWUPDATEINFO("postFlash returned");
 #endif
                     dispatchAndUpdateEvent(_FLASHING_SUCCEEDED,"");
-                    //dispatchAndUpdateEvent(_WAITING_FOR_REBOOT,"");
+                    dispatchAndUpdateEvent(_WAITING_FOR_REBOOT,"");
                     
                 }	
                 else //non-mediaclient and non-zero ret
                 {
-                    SWUPDATEINFO("GSK: non-USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
-                    SWUPDATEINFO("GSK: Entering postFlash: reboot_flag =%s, maint%s\n", reboot_flag, maint);
+                    SWUPDATEINFO("non-USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
+                    SWUPDATEINFO("Entering postFlash: reboot_flag =%s, maint%s\n", reboot_flag, maint);
                     postFlash(maint, file+1, upgrade_type, reboot_flag ,initiated_type);
-                    SWUPDATEINFO("GSK: postFlash returned");
+                    SWUPDATEINFO("postFlash returned");
                     dispatchAndUpdateEvent(_FLASHING_SUCCEEDED,"");
-                    SWUPDATEINFO("GSK: non-USB success -> complete deferred deepsleep rebootPending=%d",
+                    SWUPDATEINFO("non-USB success -> complete deferred deepsleep rebootPending=%d",
                         _rebootPending.load());
                     completePowerModeChange(!_rebootPending.load());
                 }
@@ -782,7 +782,7 @@ namespace WPEFramework {
                 snprintf(fwdls.status, sizeof(fwdls.status), "Status|Download complete\n");
                 snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Download complete\n");
                 snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|");
-                //SWUPDATEINFO("GSK: Non-mediaclient success -> release deferred deepsleep");
+                //SWUPDATEINFO("Non-mediaclient success -> release deferred deepsleep");
                 completePowerModeChange(true);
             }
 
@@ -840,7 +840,7 @@ namespace WPEFramework {
         uint32_t FirmwareUpdateImplementation::Configure(PluginHost::IShell* shell)
         {
             LOGINFO("Configuring FirmwareUpdateImplementation");
-            SWUPDATEINFO("GSK: Configure invoked shell=%p", shell);
+            SWUPDATEINFO("Configure invoked shell=%p", shell);
             uint32_t result = Core::ERROR_NONE;
             ASSERT(shell != nullptr);
             mShell = shell;
@@ -925,7 +925,7 @@ namespace WPEFramework {
                 snprintf(rebootFlag, sizeof(rebootFlag), "false");
             }
             const char *reboot_flag = rebootFlag;
-            SWUPDATEINFO("GSK: flashImageThread reboot_flag(RFC)=%s firmwareType=%s", reboot_flag, firmwareType.c_str());
+            SWUPDATEINFO("flashImageThread reboot_flag(RFC)=%s firmwareType=%s", reboot_flag, firmwareType.c_str());
             const char *proto = "usb";
             const char *maint = "false";
             const char *initiated_type = "user";
@@ -947,7 +947,7 @@ namespace WPEFramework {
                     snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
                     snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|File copy operation failed.\n");
                     updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type);
-                    SWUPDATEINFO("GSK: USB copy failed early -> release deferred deepsleep");
+                    SWUPDATEINFO("USB copy failed early -> release deferred deepsleep");
                     completePowerModeChange(true);
 
                     return ;
@@ -960,15 +960,15 @@ namespace WPEFramework {
                 }
             }
 
-            #if 1 //Used to simulate maintenance critical reboot scenarios.
+            #if 0 //Used to simulate maintenance critical reboot scenarios.
             if (strncmp(reboot_flag, "true", 4) == 0)
             {
                 maint = "true";
-                SWUPDATEINFO("GSK: Simulation : force maint=%s\n", maint);
+                SWUPDATEINFO("Simulation : force maint=%s\n", maint);
             }
             #endif
 
-            SWUPDATEINFO("GSK: calling flashImage(reboot_flag=%s, maint=%s)\n", reboot_flag, maint);
+            SWUPDATEINFO("calling flashImage(reboot_flag=%s, maint=%s)\n", reboot_flag, maint);
 
             //Note : flashImage() is combination of both rdkfwupdater/src/flash.c(Flashing part of deviceInitiatedFWDnld.sh) and Flashing part of userInitiatedFWDnld.sh . For now except upgrade_file ,upgrade_type all other param are passed with default value .other param useful when for future implementations
             // Call the actual flashing function
@@ -1080,7 +1080,7 @@ namespace WPEFramework {
             flashThread = std::thread(&WPEFramework::Plugin::FirmwareUpdateImplementation::flashImageThread, this, firmwareFilepath, firmwareType);
             result.success = true;
             status =Core::ERROR_NONE;
-            SWUPDATEINFO("GSK: UpdateFirmware started flash thread path=%s type=%s", firmwareFilepath.c_str(), firmwareType.c_str());
+            SWUPDATEINFO("UpdateFirmware started flash thread path=%s type=%s", firmwareFilepath.c_str(), firmwareType.c_str());
 
             return status;
         }
