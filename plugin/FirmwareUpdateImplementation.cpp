@@ -685,6 +685,7 @@ namespace WPEFramework {
                 SWUPDATEINFO("flash_status = %d and ret = %d\n",flash_status, ret);
             } else {
                 SWUPDATEERR("imageFlasher.sh required for flash image. This is device specific implementation\n");
+                isFlashingInProgress = false;
             }
             if (flash_status == 0 && (upgrade_type != PDRI_UPGRADE)) {
                 SWUPDATEINFO("doCDL success.\n");
