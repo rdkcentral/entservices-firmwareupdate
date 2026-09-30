@@ -30,6 +30,8 @@
 #include <vector>
 #include <cstdio>
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include <sys/stat.h>
 #include <unistd.h>
 #include "COMLinkMock.h"
@@ -387,10 +389,38 @@ TEST_F(FirmwareUpdateTest, UpdateFirmware_RejectsConcurrentFlash)
 {
     createTestFirmwareFile();
     const string request = "{\"firmwareFilepath\":\"" + TEST_FIRMWARE_PATH + "\",\"firmwareType\":\"PCI\"}";
+    std::ofstream flasher("/lib/rdk/imageFlasher.sh");
+    flasher << "#!/bin/bash\nexit 0\n";
+    flasher.close();
+    safeChmod("/lib/rdk/imageFlasher.sh", 0755);
+
+    std::mutex flasherMutex;
+    std::condition_variable flasherCondition;
+    bool flasherEntered = false;
+    bool releaseFlasher = false;
+    EXPECT_CALL(*p_wrapsImplMock, v_secure_system(::testing::_, ::testing::_))
+        .WillOnce(::testing::Invoke([&](const char*, va_list) {
+            std::unique_lock<std::mutex> lock(flasherMutex);
+            flasherEntered = true;
+            flasherCondition.notify_one();
+            flasherCondition.wait(lock, [&]() { return releaseFlasher; });
+            return 0;
+        }));
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("updateFirmware"), request, response));
-    EXPECT_EQ(1003u,
-        handler.Invoke(connection, _T("updateFirmware"), request, response));
+    std::unique_lock<std::mutex> lock(flasherMutex);
+    const bool reachedFlasher = flasherCondition.wait_for(
+        lock, std::chrono::seconds(5), [&]() { return flasherEntered; });
+    if (reachedFlasher) {
+        EXPECT_EQ(1003u,
+            handler.Invoke(connection, _T("updateFirmware"), request, response));
+    }
+    releaseFlasher = true;
+    lock.unlock();
+    flasherCondition.notify_one();
+
+    EXPECT_TRUE(reachedFlasher);
+    safeRemoveFile("/lib/rdk/imageFlasher.sh");
 }
 
 TEST_F(FirmwareUpdateTest, FlashImageFailureUpdatesState)
