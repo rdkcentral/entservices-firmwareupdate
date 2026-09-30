@@ -389,7 +389,7 @@ TEST_F(FirmwareUpdateTest, UpdateFirmware_RejectsConcurrentFlash)
     const string request = "{\"firmwareFilepath\":\"" + TEST_FIRMWARE_PATH + "\",\"firmwareType\":\"PCI\"}";
 
     EXPECT_EQ(Core::ERROR_NONE, handler.Invoke(connection, _T("updateFirmware"), request, response));
-    EXPECT_EQ(ERROR_FIRMWAREUPDATE_INPROGRESS,
+    EXPECT_EQ(1003u,
         handler.Invoke(connection, _T("updateFirmware"), request, response));
 }
 
@@ -400,6 +400,10 @@ TEST_F(FirmwareUpdateTest, FlashImageFailureUpdatesState)
     std::ofstream image(imagePath);
     image << "failure image";
     image.close();
+    std::ofstream flasher("/lib/rdk/imageFlasher.sh");
+    flasher << "#!/bin/bash\nexit 1\n";
+    flasher.close();
+    safeChmod("/lib/rdk/imageFlasher.sh", 0755);
 
     EXPECT_CALL(*p_wrapsImplMock, v_secure_system(::testing::_, ::testing::_))
         .WillOnce(::testing::Return(1));
@@ -418,6 +422,7 @@ TEST_F(FirmwareUpdateTest, FlashImageFailureUpdatesState)
     EXPECT_TRUE(FirmwareStatus(state, substate, "read"));
     EXPECT_EQ("FLASHING_FAILED", state);
     safeRemoveFile(imagePath);
+    safeRemoveFile("/lib/rdk/imageFlasher.sh");
 }
 
 TEST_F(FirmwareUpdateTest, PowerModePreChange_IgnoresNonDeepSleepTransition)
