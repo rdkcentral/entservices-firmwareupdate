@@ -282,8 +282,21 @@ TEST_F(FirmwareUpdateTest, FirmwareUpdate_FlasherFailureWorkflow)
     params["firmwareFilepath"] = filePath;
     params["firmwareType"] = "PCI";
 
-    EXPECT_EQ(Core::ERROR_NONE,
-        InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result));
-    sleep(2);
+    EXPECT_CALL(*p_wrapsImplMock, v_secure_system(::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(1));
+
+    const uint32_t status = InvokeServiceMethod(
+        "org.rdk.FirmwareUpdate", "updateFirmware", params, result);
+    EXPECT_EQ(Core::ERROR_NONE, status);
     EXPECT_TRUE(result["success"].Boolean());
+
+    sleep(2);
+
+    JsonObject state;
+    EXPECT_EQ(Core::ERROR_NONE,
+        InvokeServiceMethod("org.rdk.FirmwareUpdate", "getUpdateState", state));
+    EXPECT_EQ("FLASHING_FAILED", state["state"].String());
+
+    std::remove(filePath);
+    std::remove("/lib/rdk/imageFlasher.sh");
 }
