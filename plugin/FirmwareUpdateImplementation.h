@@ -32,6 +32,7 @@
 #include <plugins/plugins.h>
 #include "FirmwareUpdateHelper.h"
 #include "PowerManagerInterface.h"
+#include <condition_variable>
 #include <functional>
 
 std::thread flashThread;
@@ -169,7 +170,9 @@ namespace Plugin {
         // Owned by the keep-alive thread; only written while that thread is joined.
         std::function<bool()> _powerModeKeepAliveStillPending;
         std::thread _powerModeKeepAliveThread;
-        // createInterface() retries with blocking sleeps, so it must not run on the activation thread.
+        std::atomic<bool> _powerManagerInitRun;
+        std::mutex _powerManagerInitMutex;
+        std::condition_variable _powerManagerInitCondition;
         std::thread _powerManagerInitThread;
         // Core::Sink prevents deletion when PowerManager releases its reference.
         Core::Sink<PowerModeNotification> _powerModeNotification;

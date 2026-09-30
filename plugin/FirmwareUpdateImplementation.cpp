@@ -52,6 +52,7 @@ namespace WPEFramework {
             _powerModeKeepAliveRun(false),
             _rebootPending(false),
             _maintenancePending(false),
+            _powerManagerInitRun(false),
             _powerModeNotification(this)
         {
             LOGINFO("Create FirmwareUpdateImplementation Instance");
@@ -85,6 +86,8 @@ namespace WPEFramework {
                 flashThread.join();  // Ensure the thread has completed before main exits
             }
             stopPowerModeKeepAlive();
+            _powerManagerInitRun = false;
+            _powerManagerInitCondition.notify_one();
             if (_powerManagerInitThread.joinable()) {
                 _powerManagerInitThread.join();
             }
@@ -110,8 +113,8 @@ namespace WPEFramework {
 
             _powerManager = PowerManagerInterfaceBuilder(_T("org.rdk.PowerManager"))
                                 .withIShell(mShell)
-                                .withRetryIntervalMS(POWERMGR_RETRY_INTERVAL_MS)
-                                .withRetryCount(POWERMGR_RETRY_COUNT)
+                                .withRetryIntervalMS(0)
+                                .withRetryCount(1)
                                 .createInterface();
             if (!_powerManager) {
                 SWUPDATEERR("Failed to get PowerManager instance");
@@ -849,10 +852,25 @@ namespace WPEFramework {
             uint32_t result = Core::ERROR_NONE;
             ASSERT(shell != nullptr);
             mShell = shell;
+            _powerManagerInitRun = false;
+            _powerManagerInitCondition.notify_one();
             if (_powerManagerInitThread.joinable()) {
                 _powerManagerInitThread.join();
             }
-            _powerManagerInitThread = std::thread([this]() { registerPowerManager(); });
+            _powerManagerInitRun = true;
+            _powerManagerInitThread = std::thread([this]() {
+                for (int attempt = 0; attempt < POWERMGR_RETRY_COUNT && _powerManagerInitRun.load(); ++attempt) {
+                    registerPowerManager();
+                    if (_powerManager || !_powerManagerInitRun.load()) {
+                        break;
+                    }
+
+                    std::unique_lock<std::mutex> lock(_powerManagerInitMutex);
+                    _powerManagerInitCondition.wait_for(lock,
+                        std::chrono::milliseconds(POWERMGR_RETRY_INTERVAL_MS),
+                        [this]() { return !_powerManagerInitRun.load(); });
+                }
+            });
             return result;
         }
 
