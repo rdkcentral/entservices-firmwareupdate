@@ -255,7 +255,6 @@ TEST_F(FirmwareUpdateTest,FirmwareUpdate_with_imageFlasher)
     }
 }
 
-#if 0
 TEST_F(FirmwareUpdateTest, FirmwareUpdate_FlasherFailureWorkflow)
 {
     const char* filePath = "/tmp/rdkemw21447_failure.bin";
@@ -301,4 +300,3 @@ TEST_F(FirmwareUpdateTest, FirmwareUpdate_FlasherFailureWorkflow)
     std::remove(filePath);
     std::remove("/lib/rdk/imageFlasher.sh");
 }
-#endif
