@@ -1444,15 +1444,16 @@ bool copyFileToDirectory(const char *source_file, const char *destination_dir) {
     char buffer[8192];
     ssize_t bytesRead;
     while ((bytesRead = read(sourceFd, buffer, sizeof(buffer))) > 0) {
-        ssize_t offset = 0;
-        while (offset < bytesRead) {
-            const size_t remaining = static_cast<size_t>(bytesRead - offset);
+        const size_t bytesReadSize = static_cast<size_t>(bytesRead);
+        size_t offset = 0;
+        while (offset < bytesReadSize) {
+            const size_t remaining = bytesReadSize - offset;
             const ssize_t bytesWritten = write(destinationFd, buffer + offset, remaining);
             if (bytesWritten <= 0) {
                 copied = false;
                 break;
             }
-            offset += bytesWritten;
+            offset += static_cast<size_t>(bytesWritten);
         }
         if (!copied)
             break;
