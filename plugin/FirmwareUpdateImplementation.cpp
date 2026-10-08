@@ -34,18 +34,31 @@ namespace WPEFramework {
     namespace Plugin {
         bool FirmwareUpdateImplementation::isValidFirmwarePath(const std::string& filepath, std::string& canonicalPath, int& firmwareFd, std::string& errorReason)
         {
-            struct stat pathInfo;
-            if (lstat(filepath.c_str(), &pathInfo) != 0 || S_ISLNK(pathInfo.st_mode))
+            firmwareFd = open(filepath.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+            if (firmwareFd < 0)
             {
-                errorReason = "Firmware path must be an existing non-symlink";
+                errorReason = "Firmware path cannot be opened safely";
+                return false;
+            }
+            struct stat pathInfo;
+            if (fstat(firmwareFd, &pathInfo) != 0 || !S_ISREG(pathInfo.st_mode))
+            {
+                close(firmwareFd);
+                firmwareFd = -1;
+                errorReason = "Firmware path must refer to a regular file";
                 return false;
             }
             char resolved[PATH_MAX];
-            if (realpath(filepath.c_str(), resolved) == nullptr)
+            const std::string descriptorPath = "/proc/self/fd/" + std::to_string(firmwareFd);
+            const ssize_t resolvedLength = readlink(descriptorPath.c_str(), resolved, sizeof(resolved) - 1);
+            if (resolvedLength < 0)
             {
+                close(firmwareFd);
+                firmwareFd = -1;
                 errorReason = "Firmware path cannot be resolved";
                 return false;
             }
+            resolved[resolvedLength] = '\0';
             canonicalPath.assign(resolved);
             const char* safePrefixes[] = { "/tmp/", "/opt/", "/var/tmp/" };
             bool safe = false;
@@ -59,16 +72,9 @@ namespace WPEFramework {
             }
             if (!safe)
             {
-                errorReason = "Firmware path is outside trusted roots";
-                return false;
-            }
-            firmwareFd = open(canonicalPath.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-            if (firmwareFd < 0 || fstat(firmwareFd, &pathInfo) != 0 || !S_ISREG(pathInfo.st_mode))
-            {
-                if (firmwareFd >= 0)
-                    close(firmwareFd);
+                close(firmwareFd);
                 firmwareFd = -1;
-                errorReason = "Firmware path cannot be opened safely";
+                errorReason = "Firmware path is outside trusted roots";
                 return false;
             }
             return true;
@@ -705,7 +711,7 @@ namespace WPEFramework {
             int firmwareFd = -1;
             if (!isValidFirmwarePath(firmwareFilepath, canonicalPath, firmwareFd, errorReason))
                 return;
-            flashImageThread(firmwareFd, canonicalPath, firmwareType);
+            flashImageThread(firmwareFd, std::move(canonicalPath), std::move(firmwareType));
         }
 
         void FirmwareUpdateImplementation::flashImageThread(int firmwareFd, std::string firmwareFilepath, std::string firmwareType) {
@@ -867,8 +873,8 @@ namespace WPEFramework {
                 flashThread.join();  // Ensure the thread has completed before main exits
             }
             // Start a new flashing thread
-            flashThread = std::thread([this, firmwareFd, canonicalFirmwarePath, firmwareType]() {
-                flashImageThread(firmwareFd, canonicalFirmwarePath, firmwareType);
+            flashThread = std::thread([this, firmwareFd, canonicalFirmwarePath, firmwareType]() mutable {
+                flashImageThread(firmwareFd, std::move(canonicalFirmwarePath), std::move(firmwareType));
             });
             result.success = true;
             status =Core::ERROR_NONE;
