@@ -1424,19 +1424,7 @@ bool copyFileToDirectory(const char *source_file, const char *destination_dir) {
     // Construct the destination file path
     std::string dest_file_path = std::string(destination_dir) + "/" + safe_file_name;
 
-    // Use O_NOFOLLOW to prevent symlink following (platform-specific)
-    // For cross-platform compatibility, we'll use additional validation
-    struct stat src_stat, dest_stat;
-    if (lstat(source_file, &src_stat) != 0 || !S_ISREG(src_stat.st_mode) || S_ISLNK(src_stat.st_mode)) {
-        SWUPDATEERR("Error: Source must be a regular file: %s\n", source_file);
-        return false;
-    }
-
-    if (lstat(dest_file_path.c_str(), &dest_stat) == 0 && (!S_ISREG(dest_stat.st_mode) || S_ISLNK(dest_stat.st_mode))) {
-        SWUPDATEERR("Error: Destination is not a regular file\n");
-        return false;
-    }
-
+    struct stat src_stat;
     const int sourceFd = open(source_file, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
     if (sourceFd < 0 || fstat(sourceFd, &src_stat) != 0 || !S_ISREG(src_stat.st_mode)) {
         if (sourceFd >= 0)
@@ -1458,7 +1446,8 @@ bool copyFileToDirectory(const char *source_file, const char *destination_dir) {
     while ((bytesRead = read(sourceFd, buffer, sizeof(buffer))) > 0) {
         ssize_t offset = 0;
         while (offset < bytesRead) {
-            const ssize_t bytesWritten = write(destinationFd, buffer + offset, bytesRead - offset);
+            const size_t remaining = static_cast<size_t>(bytesRead - offset);
+            const ssize_t bytesWritten = write(destinationFd, buffer + offset, remaining);
             if (bytesWritten <= 0) {
                 copied = false;
                 break;
