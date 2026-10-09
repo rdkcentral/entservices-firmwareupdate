@@ -37,6 +37,7 @@
 #include "COMLinkMock.h"
 #include "RfcApiMock.h"
 #include "WrapsMock.h"
+#include "PowerManagerMock.h"
 #include "WorkerPoolImplementation.h"
 #include "secure_wrappermock.h"
 #include "ThunderPortability.h"
@@ -455,10 +456,12 @@ TEST_F(FirmwareUpdateTest, FlashImageFailureUpdatesState)
     safeRemoveFile("/lib/rdk/imageFlasher.sh");
 }
 
-TEST_F(FirmwareUpdateTest, PowerModePreChange_IgnoresNonDeepSleepTransition)
+TEST_F(FirmwareUpdateTest, PowerModePreChange_AcksNonDeepSleepTransition)
 {
     ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
     Core::Sink<Plugin::FirmwareUpdateImplementation::PowerModeNotification> notification(FirmwareUpdateImpl.operator->());
+    EXPECT_CALL(PowerManagerMock::Mock(), PowerModePreChangeComplete(::testing::_, 1))
+        .WillOnce(::testing::Return(Core::ERROR_NONE));
 
     notification.OnPowerModePreChange(
         Exchange::IPowerManager::POWER_STATE_ON,

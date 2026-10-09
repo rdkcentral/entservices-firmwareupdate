@@ -24,10 +24,6 @@ std::mutex flashMutex;
 std::mutex logMutex;
 void startProgressTimer() ;
 
-// PowerManager interface acquisition retry policy.
-static constexpr int POWERMGR_RETRY_INTERVAL_MS   = 200;
-static constexpr int POWERMGR_RETRY_COUNT         = 25;
-
 // Case 1 (flashing): initial hold must exceed the keep-alive refresh interval
 // with margin, else the refresh can lose the race against PowerManager's own
 // ack timeout (see RDKEMW-21447 timing fix).
@@ -52,7 +48,6 @@ namespace WPEFramework {
             _powerModeKeepAliveRun(false),
             _rebootPending(false),
             _maintenancePending(false),
-            _powerManagerInitRun(false),
             _powerModeNotification(this)
         {
             LOGINFO("Create FirmwareUpdateImplementation Instance");
@@ -86,11 +81,6 @@ namespace WPEFramework {
                 flashThread.join();  // Ensure the thread has completed before main exits
             }
             stopPowerModeKeepAlive();
-            _powerManagerInitRun = false;
-            _powerManagerInitCondition.notify_one();
-            if (_powerManagerInitThread.joinable()) {
-                _powerManagerInitThread.join();
-            }
             unregisterPowerManager();
             mShell = nullptr;
             DeinitializeIARM();
@@ -167,15 +157,21 @@ namespace WPEFramework {
                 (currentState == Exchange::IPowerManager::PowerState::POWER_STATE_STANDBY ||
                  currentState == Exchange::IPowerManager::PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
 
-            if (!enteringDeepSleep || !_powerModeClientRegistered) {
-                if (!enteringDeepSleep) {
-                    // A different transition means PowerManager's active transaction moved on;
-                    // any keep-alive still refreshing the old deep-sleep txnId is now stale.
-                    stopPowerModeKeepAlive();
+            if (!_powerModeClientRegistered || !_powerManager) {
+                SWUPDATEINFO("Skipping pre-change (PowerManager client not registered)");
+                return;
+            }
+
+            if (!enteringDeepSleep) {
+                // A different transition means PowerManager's active transaction moved on;
+                // any keep-alive still refreshing the old deep-sleep txnId is now stale.
+                stopPowerModeKeepAlive();
+                {
                     std::lock_guard<std::mutex> lock(_powerModeMutex);
                     _pendingPowerTransactionId = -1;
                 }
-                SWUPDATEINFO("Skipping pre-change (not target transition or not registered)");
+                SWUPDATEINFO("Non-deep-sleep transition -> ack txnId=%d", transactionId);
+                _powerManager->PowerModePreChangeComplete(_powerModeClientId, transactionId);
                 return;
             }
 
@@ -852,25 +848,7 @@ namespace WPEFramework {
             uint32_t result = Core::ERROR_NONE;
             ASSERT(shell != nullptr);
             mShell = shell;
-            _powerManagerInitRun = false;
-            _powerManagerInitCondition.notify_one();
-            if (_powerManagerInitThread.joinable()) {
-                _powerManagerInitThread.join();
-            }
-            _powerManagerInitRun = true;
-            _powerManagerInitThread = std::thread([this]() {
-                for (int attempt = 0; attempt < POWERMGR_RETRY_COUNT && _powerManagerInitRun.load(); ++attempt) {
-                    registerPowerManager();
-                    if (_powerManager || !_powerManagerInitRun.load()) {
-                        break;
-                    }
-
-                    std::unique_lock<std::mutex> lock(_powerManagerInitMutex);
-                    _powerManagerInitCondition.wait_for(lock,
-                        std::chrono::milliseconds(POWERMGR_RETRY_INTERVAL_MS),
-                        [this]() { return !_powerManagerInitRun.load(); });
-                }
-            });
+            registerPowerManager();
             return result;
         }
 
