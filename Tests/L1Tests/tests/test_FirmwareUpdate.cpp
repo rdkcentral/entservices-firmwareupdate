@@ -141,6 +141,7 @@ extern bool copyFileToDirectory(const char *source_file, const char *destination
 extern bool FirmwareStatus(std::string& state, std::string& substate, const std::string& mode);
 extern std::string GetCurrentTimestamp();
 extern std::string readProperty(std::string filename, std::string property, std::string delimiter);
+extern std::atomic<bool> isFlashingInProgress;
 
 // Constants for helper functions
 #define UTILS_SUCCESS 1
@@ -470,16 +471,156 @@ TEST_F(FirmwareUpdateTest, PowerModePreChange_AcksNonDeepSleepTransition)
         300);
 }
 
-TEST_F(FirmwareUpdateTest, PowerModePreChange_HandlesStandbyToDeepSleep)
+TEST_F(FirmwareUpdateTest, PowerModePreChange_DelaysDeepSleepWhileFlashing)
 {
     ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
     Core::Sink<Plugin::FirmwareUpdateImplementation::PowerModeNotification> notification(FirmwareUpdateImpl.operator->());
+    EXPECT_CALL(PowerManagerMock::Mock(), DelayPowerModeChangeBy(::testing::_, 2, 300))
+        .WillOnce(::testing::Return(Core::ERROR_NONE));
+    EXPECT_CALL(PowerManagerMock::Mock(), PowerModePreChangeComplete(::testing::_, ::testing::_))
+        .Times(0);
 
+    isFlashingInProgress = true;
     notification.OnPowerModePreChange(
         Exchange::IPowerManager::POWER_STATE_STANDBY,
         Exchange::IPowerManager::POWER_STATE_STANDBY_DEEP_SLEEP,
         2,
         300);
+    isFlashingInProgress = false;
+}
+
+TEST_F(FirmwareUpdateTest, PowerModePreChange_AcksDeepSleepWhenNothingPending)
+{
+    ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
+    Core::Sink<Plugin::FirmwareUpdateImplementation::PowerModeNotification> notification(FirmwareUpdateImpl.operator->());
+    EXPECT_CALL(PowerManagerMock::Mock(), PowerModePreChangeComplete(::testing::_, 3))
+        .WillOnce(::testing::Return(Core::ERROR_NONE));
+    EXPECT_CALL(PowerManagerMock::Mock(), DelayPowerModeChangeBy(::testing::_, ::testing::_, ::testing::_))
+        .Times(0);
+
+    isFlashingInProgress = false;
+    notification.OnPowerModePreChange(
+        Exchange::IPowerManager::POWER_STATE_STANDBY,
+        Exchange::IPowerManager::POWER_STATE_STANDBY_DEEP_SLEEP,
+        3,
+        300);
+}
+
+static void writeImageFlasher()
+{
+    std::ofstream flasher("/lib/rdk/imageFlasher.sh");
+    flasher << "#!/bin/bash\nexit 0\n";
+    flasher.close();
+    safeChmod("/lib/rdk/imageFlasher.sh", 0755);
+}
+
+// Writes /etc/device.properties for one test and empties it afterwards.
+struct ScopedDeviceProperties {
+    explicit ScopedDeviceProperties(const std::string& content)
+    {
+        std::ofstream file("/etc/device.properties", std::ios::trunc);
+        file << content;
+    }
+    ~ScopedDeviceProperties()
+    {
+        std::ofstream file("/etc/device.properties", std::ios::trunc);
+    }
+};
+
+TEST_F(FirmwareUpdateTest, FlashFailureAcksDeferredDeepSleep)
+{
+    ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
+    Core::Sink<Plugin::FirmwareUpdateImplementation::PowerModeNotification> notification(FirmwareUpdateImpl.operator->());
+    writeImageFlasher();
+    EXPECT_CALL(*p_wrapsImplMock, v_secure_system(::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(1));
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_BroadcastEvent)
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly(::testing::Return(IARM_RESULT_SUCCESS));
+    {
+        ::testing::InSequence sequence;
+        EXPECT_CALL(PowerManagerMock::Mock(), DelayPowerModeChangeBy(::testing::_, 4, 300))
+            .WillOnce(::testing::Return(Core::ERROR_NONE));
+        EXPECT_CALL(PowerManagerMock::Mock(), PowerModePreChangeComplete(::testing::_, 4))
+            .WillOnce(::testing::Return(Core::ERROR_NONE));
+    }
+
+    isFlashingInProgress = true;
+    notification.OnPowerModePreChange(
+        Exchange::IPowerManager::POWER_STATE_STANDBY,
+        Exchange::IPowerManager::POWER_STATE_STANDBY_DEEP_SLEEP,
+        4,
+        300);
+    FirmwareUpdateImpl->flashImage("", TEST_FIRMWARE_PATH.c_str(), "false", "http", PCI_UPGRADE,
+        "false", "user", "false");
+
+    safeRemoveFile("/lib/rdk/imageFlasher.sh");
+}
+
+TEST_F(FirmwareUpdateTest, FlashSuccessWithoutRebootAcksDeferredDeepSleep)
+{
+    ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
+    Core::Sink<Plugin::FirmwareUpdateImplementation::PowerModeNotification> notification(FirmwareUpdateImpl.operator->());
+    writeImageFlasher();
+    EXPECT_CALL(*p_wrapsImplMock, v_secure_system(::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(0));
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_BroadcastEvent)
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly(::testing::Return(IARM_RESULT_SUCCESS));
+    {
+        ::testing::InSequence sequence;
+        EXPECT_CALL(PowerManagerMock::Mock(), DelayPowerModeChangeBy(::testing::_, 5, 300))
+            .WillOnce(::testing::Return(Core::ERROR_NONE));
+        EXPECT_CALL(PowerManagerMock::Mock(), PowerModePreChangeComplete(::testing::_, 5))
+            .WillOnce(::testing::Return(Core::ERROR_NONE));
+    }
+
+    isFlashingInProgress = true;
+    notification.OnPowerModePreChange(
+        Exchange::IPowerManager::POWER_STATE_STANDBY,
+        Exchange::IPowerManager::POWER_STATE_STANDBY_DEEP_SLEEP,
+        5,
+        300);
+    FirmwareUpdateImpl->flashImage("", TEST_FIRMWARE_PATH.c_str(), "false", "http", PCI_UPGRADE,
+        "false", "user", "false");
+
+    safeRemoveFile("/lib/rdk/imageFlasher.sh");
+}
+
+TEST_F(FirmwareUpdateTest, FlashSuccessWithRebootExtendsDeepSleepHold)
+{
+    ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
+    Core::Sink<Plugin::FirmwareUpdateImplementation::PowerModeNotification> notification(FirmwareUpdateImpl.operator->());
+    // Only the media-client path keeps the hold instead of acknowledging.
+    ScopedDeviceProperties deviceProperties(
+        "DEVICE_TYPE=mediaclient\nDEVICE_NAME=TestMediaClient\nCPU_ARCH=ARM\nDIFW_PATH=/opt/CDL\n");
+    safeRemoveFile("/rebootNow.sh");
+    writeImageFlasher();
+    EXPECT_CALL(*p_wrapsImplMock, v_secure_system(::testing::_, ::testing::_))
+        .WillOnce(::testing::Return(0));
+    EXPECT_CALL(*p_iarmBusImplMock, IARM_Bus_BroadcastEvent)
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly(::testing::Return(IARM_RESULT_SUCCESS));
+    EXPECT_CALL(PowerManagerMock::Mock(), PowerModePreChangeComplete(::testing::_, ::testing::_))
+        .Times(0);
+    {
+        ::testing::InSequence sequence;
+        EXPECT_CALL(PowerManagerMock::Mock(), DelayPowerModeChangeBy(::testing::_, 6, 300))
+            .WillOnce(::testing::Return(Core::ERROR_NONE));
+        EXPECT_CALL(PowerManagerMock::Mock(), DelayPowerModeChangeBy(::testing::_, 6, 630))
+            .WillOnce(::testing::Return(Core::ERROR_NONE));
+    }
+
+    isFlashingInProgress = true;
+    notification.OnPowerModePreChange(
+        Exchange::IPowerManager::POWER_STATE_STANDBY,
+        Exchange::IPowerManager::POWER_STATE_STANDBY_DEEP_SLEEP,
+        6,
+        300);
+    FirmwareUpdateImpl->flashImage("", TEST_FIRMWARE_PATH.c_str(), "true", "http", PCI_UPGRADE,
+        "false", "user", "false");
+
+    safeRemoveFile("/lib/rdk/imageFlasher.sh");
 }
 
 // UpdateFirmware Tests - Parameter Validation

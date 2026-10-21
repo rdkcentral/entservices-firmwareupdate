@@ -863,10 +863,8 @@ namespace WPEFramework {
                 }	
                 else //non-mediaclient and non-zero ret
                 {
-                    SWUPDATEINFO("non-USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
-                    SWUPDATEINFO("Entering postFlash: reboot_flag =%s, maint%s\n", reboot_flag, maint);
+                    SWUPDATEINFO("non-USB success -> postFlash reboot_flag=%s maint=%s upgrade_type=%d", reboot_flag, maint, upgrade_type);
                     postFlash(maint, file+1, upgrade_type, reboot_flag ,initiated_type);
-                    SWUPDATEINFO("postFlash returned");
                     dispatchAndUpdateEvent(_FLASHING_SUCCEEDED,"");
                     SWUPDATEINFO("non-USB success -> complete deferred deepsleep rebootPending=%d",
                         _rebootPending.load());
