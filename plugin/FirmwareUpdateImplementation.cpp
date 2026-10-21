@@ -47,7 +47,6 @@ namespace WPEFramework {
             _powerModeClientId(0),
             _powerModeClientRegistered(false),
             _pendingPowerTransactionId(-1),
-            _powerModeKeepAliveRun(false),
             _rebootPending(false),
             _maintenancePending(false),
             _powerModeNotification(this)
@@ -83,7 +82,7 @@ namespace WPEFramework {
                 flashThread.join();  // Ensure the thread has completed before main exits
             }
             stopPowerManagerRetry();
-            stopPowerModeKeepAlive();
+            shutdownPowerModeKeepAlive();
             unregisterPowerManager();
             mShell = nullptr;
             DeinitializeIARM();
@@ -150,7 +149,6 @@ namespace WPEFramework {
         {
             std::shared_ptr<PowerManagerRetryState> state = std::make_shared<PowerManagerRetryState>();
             state->running = true;
-            _powerManagerRetry = state;
 
             std::thread([this, state]() {
                 std::unique_lock<std::mutex> lock(state->mutex);
@@ -171,6 +169,7 @@ namespace WPEFramework {
                 state->running = false;
                 state->cv.notify_all();
             }).detach();
+            _powerManagerRetry = std::move(state);
         }
 
         void FirmwareUpdateImplementation::stopPowerManagerRetry()
@@ -207,7 +206,8 @@ namespace WPEFramework {
             if (!enteringDeepSleep) {
                 // A different transition means PowerManager's active transaction moved on;
                 // any keep-alive still refreshing the old deep-sleep txnId is now stale.
-                stopPowerModeKeepAlive();
+                // Callback thread: do not wait for an in-flight refresh, PowerManager rejects stale txnIds.
+                stopPowerModeKeepAlive(false);
                 {
                     std::lock_guard<std::mutex> lock(_powerModeMutex);
                     _pendingPowerTransactionId = -1;
@@ -250,36 +250,89 @@ namespace WPEFramework {
         void FirmwareUpdateImplementation::startPowerModeKeepAlive(int transactionId, int refreshIntervalSec,
             int delaySec, std::function<bool()> stillPending)
         {
-            // Stop any previous keep-alive first so txnId ownership is single-writer; this is what
-            // aborts refreshing a stale id once a new pre-change event supersedes it.
-            stopPowerModeKeepAlive();
+            // Only updates state and wakes the worker; never joins or waits, so PowerManager's callback thread is not blocked.
+            std::lock_guard<std::mutex> lock(_powerModeKeepAliveMutex);
+            if (_powerModeKeepAliveQuit) {
+                return;
+            }
+            _powerModeKeepAliveTxnId = transactionId;
+            _powerModeKeepAliveIntervalSec = refreshIntervalSec;
+            _powerModeKeepAliveDelaySec = delaySec;
             _powerModeKeepAliveStillPending = std::move(stillPending);
-            _powerModeKeepAliveRun = true;
-            _powerModeKeepAliveThread = std::thread([this, transactionId, refreshIntervalSec, delaySec]() {
+            _powerModeKeepAliveActive = true;
+            ++_powerModeKeepAliveGeneration;
+            if (!_powerModeKeepAliveThread.joinable()) {
+                _powerModeKeepAliveThread = std::thread(&FirmwareUpdateImplementation::powerModeKeepAliveLoop, this);
+            }
+            _powerModeKeepAliveCv.notify_all();
+        }
+
+        void FirmwareUpdateImplementation::stopPowerModeKeepAlive(bool waitForIdle)
+        {
+            std::unique_lock<std::mutex> lock(_powerModeKeepAliveMutex);
+            if (_powerModeKeepAliveActive) {
+                SWUPDATEINFO("KeepAlive stopped");
+            }
+            _powerModeKeepAliveActive = false;
+            ++_powerModeKeepAliveGeneration;
+            _powerModeKeepAliveCv.notify_all();
+            if (waitForIdle) {
+                _powerModeKeepAliveCv.wait(lock, [this]() { return !_powerModeKeepAliveRefreshing; });
+            }
+        }
+
+        void FirmwareUpdateImplementation::shutdownPowerModeKeepAlive()
+        {
+            {
+                std::lock_guard<std::mutex> lock(_powerModeKeepAliveMutex);
+                _powerModeKeepAliveQuit = true;
+                _powerModeKeepAliveActive = false;
+                ++_powerModeKeepAliveGeneration;
+                _powerModeKeepAliveCv.notify_all();
+            }
+            if (_powerModeKeepAliveThread.joinable()) {
+                _powerModeKeepAliveThread.join();
+            }
+        }
+
+        void FirmwareUpdateImplementation::powerModeKeepAliveLoop()
+        {
+            // The mutex guards keep-alive state only; it is released while waiting and during the refresh call.
+            std::unique_lock<std::mutex> lock(_powerModeKeepAliveMutex);
+            while (!_powerModeKeepAliveQuit) {
+                if (!_powerModeKeepAliveActive) {
+                    _powerModeKeepAliveCv.wait(lock, [this]() { return _powerModeKeepAliveQuit || _powerModeKeepAliveActive; });
+                    continue;
+                }
+
+                const uint64_t generation = _powerModeKeepAliveGeneration;
+                const int transactionId = _powerModeKeepAliveTxnId;
+                const int intervalSec = _powerModeKeepAliveIntervalSec;
+                const int delaySec = _powerModeKeepAliveDelaySec;
                 SWUPDATEINFO("KeepAlive started txnId=%d", transactionId);
-                while (_powerModeKeepAliveRun.load() && _powerModeKeepAliveStillPending()) {
-                    for (int i = 0; i < refreshIntervalSec; ++i) {
-                        if (!_powerModeKeepAliveRun.load() || !_powerModeKeepAliveStillPending()) break;
-                        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+                while (!_powerModeKeepAliveQuit && _powerModeKeepAliveGeneration == generation) {
+                    _powerModeKeepAliveCv.wait_for(lock, std::chrono::seconds(intervalSec),
+                        [this, generation]() { return _powerModeKeepAliveQuit || _powerModeKeepAliveGeneration != generation; });
+                    if (_powerModeKeepAliveQuit || _powerModeKeepAliveGeneration != generation) {
+                        break;
                     }
-                    if (!_powerModeKeepAliveRun.load() || !_powerModeKeepAliveStillPending()) break;
+                    if (!_powerModeKeepAliveStillPending()) {
+                        _powerModeKeepAliveActive = false;
+                        break;
+                    }
+
+                    _powerModeKeepAliveRefreshing = true;
+                    lock.unlock();
                     if (_powerManager && _powerModeClientRegistered) {
                         _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, delaySec);
                         SWUPDATEINFO("KeepAlive refreshed delay txnId=%d (%ds)", transactionId, delaySec);
                     }
+                    lock.lock();
+                    _powerModeKeepAliveRefreshing = false;
+                    _powerModeKeepAliveCv.notify_all();
                 }
                 SWUPDATEINFO("KeepAlive exiting txnId=%d", transactionId);
-            });
-        }
-
-        void FirmwareUpdateImplementation::stopPowerModeKeepAlive()
-        {
-            const bool wasRunning = _powerModeKeepAliveRun.exchange(false);
-            if (_powerModeKeepAliveThread.joinable()) {
-                _powerModeKeepAliveThread.join();
-            }
-            if (wasRunning) {
-                SWUPDATEINFO("KeepAlive stopped");
             }
         }
 

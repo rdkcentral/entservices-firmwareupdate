@@ -165,7 +165,9 @@ namespace Plugin {
             const int stateChangeAfter);
         void completePowerModeChange(bool isComplete);
         void startPowerModeKeepAlive(int transactionId, int refreshIntervalSec, int delaySec, std::function<bool()> stillPending);
-        void stopPowerModeKeepAlive();
+        void stopPowerModeKeepAlive(bool waitForIdle = true);
+        void shutdownPowerModeKeepAlive();
+        void powerModeKeepAliveLoop();
 
         mutable Core::CriticalSection _adminLock;
         std::list<Exchange::IFirmwareUpdate::INotification*> _FirmwareUpdateNotification;
@@ -177,12 +179,20 @@ namespace Plugin {
         std::shared_ptr<PowerManagerRetryState> _powerManagerRetry;
         int _pendingPowerTransactionId;
         std::mutex _powerModeMutex;
-        std::atomic<bool> _powerModeKeepAliveRun;
         std::atomic<bool> _rebootPending;
         std::atomic<bool> _maintenancePending;
-        // Owned by the keep-alive thread; only written while that thread is joined.
-        std::function<bool()> _powerModeKeepAliveStillPending;
+        // One long-lived worker; callers only change this state under the mutex, which is never held across a wait or the refresh call.
+        std::mutex _powerModeKeepAliveMutex;
+        std::condition_variable _powerModeKeepAliveCv;
         std::thread _powerModeKeepAliveThread;
+        std::function<bool()> _powerModeKeepAliveStillPending;
+        uint64_t _powerModeKeepAliveGeneration = 0;
+        int _powerModeKeepAliveTxnId = -1;
+        int _powerModeKeepAliveIntervalSec = 0;
+        int _powerModeKeepAliveDelaySec = 0;
+        bool _powerModeKeepAliveActive = false;
+        bool _powerModeKeepAliveRefreshing = false;
+        bool _powerModeKeepAliveQuit = false;
         // Core::Sink prevents deletion when PowerManager releases its reference.
         Core::Sink<PowerModeNotification> _powerModeNotification;
         
