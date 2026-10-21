@@ -33,6 +33,8 @@
 #include "FirmwareUpdateHelper.h"
 #include "PowerManagerInterface.h"
 #include <functional>
+#include <condition_variable>
+#include <memory>
 
 std::thread flashThread;
 
@@ -146,8 +148,18 @@ namespace Plugin {
         uint32_t Configure(PluginHost::IShell* shell);
 
     private:
+        // Held by the detached retry thread too, so the destructor can cancel it and wait for it to finish.
+        struct PowerManagerRetryState {
+            std::mutex mutex;
+            std::condition_variable cv;
+            bool cancelled = false;
+            bool running = false;
+        };
+
         void registerPowerManager();
         void unregisterPowerManager();
+        void startPowerManagerRetry();
+        void stopPowerManagerRetry();
         void handlePowerModePreChange(const Exchange::IPowerManager::PowerState currentState,
             const Exchange::IPowerManager::PowerState newState, const int transactionId,
             const int stateChangeAfter);
@@ -160,7 +172,9 @@ namespace Plugin {
         PluginHost::IShell* mShell;
         PowerManagerInterfaceRef _powerManager;
         uint32_t _powerModeClientId;
-        bool _powerModeClientRegistered;
+        // Written by the retry thread, read by callback and flash threads.
+        std::atomic<bool> _powerModeClientRegistered;
+        std::shared_ptr<PowerManagerRetryState> _powerManagerRetry;
         int _pendingPowerTransactionId;
         std::mutex _powerModeMutex;
         std::atomic<bool> _powerModeKeepAliveRun;

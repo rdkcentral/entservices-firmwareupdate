@@ -35,6 +35,8 @@ static constexpr int FLASH_HOLD_REFRESH_DELAY_SEC     = 600;
 static constexpr int REBOOT_HOLD_DELAY_SEC            = 630;
 static constexpr int REBOOT_HOLD_REFRESH_INTERVAL_SEC = 300;
 
+static constexpr int POWERMGR_RETRY_INTERVAL_SEC      = 1;
+
 namespace WPEFramework {
     namespace Plugin {
         SERVICE_REGISTRATION(FirmwareUpdateImplementation, 1, 0);
@@ -80,6 +82,7 @@ namespace WPEFramework {
                 LOGINFO("flashThread is still running or joinable. Joining now...");
                 flashThread.join();  // Ensure the thread has completed before main exits
             }
+            stopPowerManagerRetry();
             stopPowerModeKeepAlive();
             unregisterPowerManager();
             mShell = nullptr;
@@ -130,7 +133,7 @@ namespace WPEFramework {
         void FirmwareUpdateImplementation::unregisterPowerManager()
         {
             SWUPDATEINFO("unregisterPowerManager entry hasRef=%d clientRegistered=%d clientId=%u",
-                static_cast<int>(static_cast<bool>(_powerManager)), _powerModeClientRegistered, _powerModeClientId);
+                static_cast<int>(static_cast<bool>(_powerManager)), static_cast<int>(_powerModeClientRegistered.load()), _powerModeClientId);
             if (!_powerManager) {
                 return;
             }
@@ -143,6 +146,45 @@ namespace WPEFramework {
             _powerManager.Reset();
         }
 
+        void FirmwareUpdateImplementation::startPowerManagerRetry()
+        {
+            std::shared_ptr<PowerManagerRetryState> state = std::make_shared<PowerManagerRetryState>();
+            state->running = true;
+            _powerManagerRetry = state;
+
+            std::thread([this, state]() {
+                std::unique_lock<std::mutex> lock(state->mutex);
+                while (!state->cancelled) {
+                    if (state->cv.wait_for(lock, std::chrono::seconds(POWERMGR_RETRY_INTERVAL_SEC),
+                            [&state]() { return state->cancelled; })) {
+                        break;
+                    }
+                    lock.unlock();
+                    registerPowerManager();
+                    const bool registered = _powerModeClientRegistered.load();
+                    lock.lock();
+                    if (registered) {
+                        break;
+                    }
+                }
+                // Nothing below may touch 'this': the destructor can return once running is false.
+                state->running = false;
+                state->cv.notify_all();
+            }).detach();
+        }
+
+        void FirmwareUpdateImplementation::stopPowerManagerRetry()
+        {
+            std::shared_ptr<PowerManagerRetryState> state = _powerManagerRetry;
+            if (!state) {
+                return;
+            }
+            std::unique_lock<std::mutex> lock(state->mutex);
+            state->cancelled = true;
+            state->cv.notify_all();
+            state->cv.wait(lock, [&state]() { return !state->running; });
+        }
+
         void FirmwareUpdateImplementation::handlePowerModePreChange(
             const Exchange::IPowerManager::PowerState currentState,
             const Exchange::IPowerManager::PowerState newState, const int transactionId,
@@ -150,7 +192,7 @@ namespace WPEFramework {
         {
             SWUPDATEINFO("OnPowerModePreChange cur=%d new=%d txnId=%d timeout=%d flashing=%d clientRegistered=%d",
                 currentState, newState, transactionId, stateChangeAfter,
-                isFlashingInProgress.load(), _powerModeClientRegistered);
+                isFlashingInProgress.load(), static_cast<int>(_powerModeClientRegistered.load()));
 
             const bool enteringDeepSleep =
                 (newState == Exchange::IPowerManager::PowerState::POWER_STATE_STANDBY_DEEP_SLEEP) &&
@@ -266,7 +308,7 @@ namespace WPEFramework {
                 }
             }
             SWUPDATEINFO("completePowerModeChange isComplete=%d pendingTxnId=%d clientRegistered=%d hasRef=%d",
-                isComplete, transactionId, _powerModeClientRegistered,
+                isComplete, transactionId, static_cast<int>(_powerModeClientRegistered.load()),
                 static_cast<int>(static_cast<bool>(_powerManager)));
 
             // Only act on a deferred transition. Never force deep sleep on our own.
@@ -849,6 +891,10 @@ namespace WPEFramework {
             ASSERT(shell != nullptr);
             mShell = shell;
             registerPowerManager();
+            if (!_powerModeClientRegistered.load()) {
+                SWUPDATEINFO("PowerManager not ready; retrying registration every %ds", POWERMGR_RETRY_INTERVAL_SEC);
+                startPowerManagerRetry();
+            }
             return result;
         }
 
