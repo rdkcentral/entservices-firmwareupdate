@@ -296,16 +296,17 @@ namespace WPEFramework {
                 // The PowerManager transaction is only valid when it was actually deferred
                 // from a pre-change callback. Repeated terminal-path calls must not send a
                 // stale/invalid txnId back to PowerManager.
-                if (transactionId < 0) {
-                    SWUPDATEINFO("completePowerModeChange no-op (no valid deferred transaction)");
-                    return;
-                }
-
                 if (isComplete) {
                     _pendingPowerTransactionId = -1;
                     _rebootPending = false;
                     _maintenancePending = false;
                 }
+
+                if (transactionId < 0) {
+                    SWUPDATEINFO("completePowerModeChange no-op (no valid deferred transaction)");
+                    return;
+                }
+
             }
             SWUPDATEINFO("completePowerModeChange isComplete=%d pendingTxnId=%d clientRegistered=%d hasRef=%d",
                 isComplete, transactionId, static_cast<int>(_powerModeClientRegistered.load()),
