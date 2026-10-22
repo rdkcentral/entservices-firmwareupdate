@@ -105,11 +105,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
-          # Pinned: develop dropped Tests/mocks/devicesettings.h in favour of
-          # DS HAL mocks needing external rdk-halif-device_settings headers.
-          # This commit has the old layout and the rebased Firmware_postFlash.patch.
-          ref: ee8acf8c61ddee288cf442f1d1fafd8fb928561e
-          #ref: 2.0.0
+          ref: 2.0.0
           
       - name: Checkout networkmanager
         uses: actions/checkout@v3
@@ -402,6 +398,7 @@ jobs:
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/systemservices
           -I $GITHUB_WORKSPACE/entservices-testframework/Tests/headers/systemservices/proc
           -I $GITHUB_WORKSPACE/install/usr/include
+          -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/devicesettings.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Iarm.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/Rfc.h
           -include $GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/RBus.h
