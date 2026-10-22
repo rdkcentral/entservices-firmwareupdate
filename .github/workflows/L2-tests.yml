@@ -98,7 +98,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-firmwareupdate
           path: entservices-firmwareupdate
-          ref: develop
+          ref: feature/RDKEMW-16743
 
       - name: Checkout entservices-testframework
         uses: actions/checkout@v3
@@ -109,6 +109,7 @@ jobs:
           # DS HAL mocks needing external rdk-halif-device_settings headers.
           # This commit has the old layout and the rebased Firmware_postFlash.patch.
           ref: ee8acf8c61ddee288cf442f1d1fafd8fb928561e
+          #ref: 2.0.0
           
       - name: Checkout networkmanager
         uses: actions/checkout@v3
