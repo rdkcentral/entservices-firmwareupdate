@@ -114,7 +114,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
-          ref: develop
+          ref: topic/RDKEMW-21447-pwrmgrtda-fix-l2
           
       - name: Checkout networkmanager
         uses: actions/checkout@v3
@@ -331,21 +331,6 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/install/usr/include"
           &&
           cp -r "$GITHUB_WORKSPACE/rdk-halif-device_settings/include/." "$GITHUB_WORKSPACE/install/usr/include/"
-
-      # GTest-controllable stand-in for libds-hal (see DsVideoDeviceHalMock.h). Must be
-      # installed before building entservices-devicesettings so find_library(NAMES ds-hal)
-      # resolves to this instead of requiring real hardware HAL.
-      - name: Build ds-hal stub
-        run: >
-          cmake
-          -S "$GITHUB_WORKSPACE/entservices-testframework/Tests/mocks/devicesettings"
-          -B build/ds-hal
-          -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/install/usr"
-          -DCMAKE_CXX_FLAGS="-I $GITHUB_WORKSPACE/install/usr/include"
-          &&
-          cmake --build build/ds-hal -j8
-          &&
-          cmake --install build/ds-hal
 
       - name: Generate IARM headers
         run: |
