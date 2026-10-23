@@ -86,6 +86,15 @@ jobs:
           path: ThunderTools
           ref: ${{env.THUNDER_TOOLS_COMMIT_SHA}}
 
+      # dsTypes.h/dsVideoDevice.h HAL header contract
+      # Using stable tag 6.0.1 to avoid breaking changes from main branch
+      - name: Checkout rdk-halif-device_settings
+        uses: actions/checkout@v3
+        with:
+          repository: rdkcentral/rdk-halif-device_settings
+          path: rdk-halif-device_settings
+          ref: 6.0.1
+
       - name: Checkout entservices-firmwareupdate
         if: ${{ inputs.caller_source == 'local' }}
         uses: actions/checkout@v3
@@ -105,7 +114,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
-          ref: 60e045d700c8a5a65257ea804e019105c065732a
+          ref: develop
           
       - name: Checkout networkmanager
         uses: actions/checkout@v3
@@ -344,6 +353,11 @@ jobs:
           &&
           cmake --install build/entservices-helpers
 
+      - name: Copy DeviceSettings HAL headers
+        run: >
+          mkdir -p "$GITHUB_WORKSPACE/install/usr/include"
+          &&
+          cp -r "$GITHUB_WORKSPACE/rdk-halif-device_settings/include/." "$GITHUB_WORKSPACE/install/usr/include/"
 
       - name: Generate IARM headers
         run: |
