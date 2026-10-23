@@ -105,7 +105,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
-          ref: 2.0.0
+          ref: 60e045d700c8a5a65257ea804e019105c065732a
           
       - name: Checkout networkmanager
         uses: actions/checkout@v3
