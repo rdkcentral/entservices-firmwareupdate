@@ -114,7 +114,7 @@ jobs:
         with:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
-          ref: topic/RDKEMW-21447-pwrmgrtda-fix-l2
+          ref: develop
           
       - name: Checkout networkmanager
         uses: actions/checkout@v3
