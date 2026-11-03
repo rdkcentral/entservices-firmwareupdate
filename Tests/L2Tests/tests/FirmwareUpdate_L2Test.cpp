@@ -149,6 +149,24 @@ TEST_F(FirmwareUpdateTest,FirmwareFilepath_not_exist)
     }    
 }
 
+TEST_F(FirmwareUpdateTest,FirmwareFilepath_is_directory)
+{
+    uint32_t status = Core::ERROR_GENERAL;
+    JsonObject params;
+    JsonObject result;
+
+    const char* dirPath = "/tmp/firmware_l2_test_directory";
+    system(("mkdir -p " + std::string(dirPath)).c_str());
+
+    params["firmwareFilepath"] = dirPath;
+    params["firmwareType"]     = "PCI";
+    status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
+
+    EXPECT_NE(status, Core::ERROR_NONE);
+
+    system(("rmdir " + std::string(dirPath)).c_str());
+}
+
 TEST_F(FirmwareUpdateTest,FirmwareUptoDateValidatation)
 {
     const char* filePath = "/tmp/ELTE11MWR_MIDDLEWARE_DEV_default_20241122145614.bin";

@@ -410,6 +410,30 @@ TEST_F(FirmwareUpdateTest, UpdateFirmware_NonexistentFile)
     EXPECT_EQ(Core::ERROR_INVALID_PARAMETER, handler.Invoke(connection, _T("updateFirmware"), request, response));
 }
 
+TEST_F(FirmwareUpdateTest, UpdateFirmware_SameAsCurrentImage_NoUpgradeNeeded)
+{
+    // NOTE: Writes to /version.txt at filesystem root. Requires write permission there.
+    // If this is not permitted in CI, the ASSERT below will fail clearly instead of
+    // silently passing.
+    std::ofstream versionFile("/version.txt");
+    ASSERT_TRUE(versionFile.is_open()) << "Cannot write /version.txt - cannot validate this scenario in this environment";
+    versionFile << "imagename:test_firmware\n";
+    versionFile.close();
+
+    std::string samePath = "/tmp/test_firmware.bin";
+    safeRemoveFile(samePath.c_str());
+    std::ofstream fw(samePath);
+    fw << "dummy content";
+    fw.close();
+
+    string request = "{\"firmwareFilepath\":\"" + samePath + "\",\"firmwareType\":\"PCI\"}";
+    EXPECT_EQ(Core::ERROR_FIRMWAREUPDATE_UPTODATE, handler.Invoke(connection, _T("updateFirmware"), request, response));
+
+    safeRemoveFile(samePath.c_str());
+    safeRemoveFile("/version.txt");
+}
+
+
 TEST_F(FirmwareUpdateTest, UpdateFirmware_MissingFirmwareFilepath)
 {
     string request = "{\"firmwareType\":\"" + TEST_FIRMWARE_TYPE_PCI + "\"}";
@@ -872,6 +896,25 @@ TEST_F(FirmwareUpdateTest, FirmwarePathPolicy)
     safeRemoveFile(symlinkPath);
     safeRemoveFile(validPath);
 }
+
+TEST_F(FirmwareUpdateTest, FirmwarePathPolicy_RejectsDirectory)
+{
+    const char* dirPath = "/tmp/firmware_test_directory";
+    safeSystemCall(("mkdir -p " + std::string(dirPath)).c_str());
+
+    std::string canonicalPath;
+    std::string errorReason;
+    int firmwareFd = -1;
+    bool valid = WPEFramework::Plugin::FirmwareUpdateImplementation::isValidFirmwarePath(
+        dirPath, canonicalPath, firmwareFd, errorReason);
+
+    EXPECT_FALSE(valid);
+    EXPECT_EQ(errorReason, "Firmware path must refer to a regular file");
+    if (firmwareFd >= 0) close(firmwareFd);
+
+    safeSystemCall(("rmdir " + std::string(dirPath)).c_str());
+}
+
 
 TEST_F(FirmwareUpdateTest, ValidatedFirmwareHandleSurvivesPathReplacement)
 {

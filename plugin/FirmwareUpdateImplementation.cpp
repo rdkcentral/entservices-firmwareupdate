@@ -34,6 +34,7 @@ namespace WPEFramework {
     namespace Plugin {
         bool FirmwareUpdateImplementation::isValidFirmwarePath(const std::string& filepath, std::string& canonicalPath, int& firmwareFd, std::string& errorReason)
         {
+            SWUPDATEINFO("isValidFirmwarePath: validating firmware called");
             firmwareFd = open(filepath.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
             if (firmwareFd < 0)
             {
@@ -43,6 +44,7 @@ namespace WPEFramework {
             struct stat pathInfo;
             if (fstat(firmwareFd, &pathInfo) != 0 || !S_ISREG(pathInfo.st_mode))
             {
+                SWUPDATEERR("isValidFirmwarePath: rejected non-regular-file path (fd=%d)", firmwareFd);
                 close(firmwareFd);
                 firmwareFd = -1;
                 errorReason = "Firmware path must refer to a regular file";
@@ -77,6 +79,7 @@ namespace WPEFramework {
                 errorReason = "Firmware path is outside trusted roots";
                 return false;
             }
+            SWUPDATEINFO("isValidFirmwarePath: validated canonical path=%s fd=%d", canonicalPath.c_str(), firmwareFd);
             return true;
         }
 
@@ -770,6 +773,7 @@ namespace WPEFramework {
 
         Core::hresult FirmwareUpdateImplementation::UpdateFirmware(const string& firmwareFilepath , const string& firmwareType , Result &result ) 
         {
+            SWUPDATEINFO("UpdateFirmware called with firmwareFilepath=%s firmwareType=%s", firmwareFilepath.c_str(), firmwareType.c_str());
             Core::hresult status = Core::ERROR_GENERAL;
             std::string state =  "";
             std::string substate =  "";
@@ -1451,6 +1455,7 @@ bool copyFileToDirectory(const char *source_file, const char *destination_dir) {
 }
 
 bool copyFileToDirectory(const char *source_file, const char *destination_dir, const char *destination_name) {
+    SWUPDATEERR("Initiating copyFileToDirectory with source_file=%s destination_dir=%s destination_name=%s", source_file, destination_dir, destination_name);
     if (!source_file || !destination_dir || !destination_name || destination_name[0] == '\0' || strchr(destination_name, '/')) {
         SWUPDATEERR("Invalid copy input.\n");
         return false;
