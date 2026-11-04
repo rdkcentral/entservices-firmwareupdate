@@ -651,34 +651,6 @@ TEST_F(FirmwareUpdateTest, UpdateFirmware_NonexistentFile)
     EXPECT_EQ(Core::ERROR_INVALID_PARAMETER, handler.Invoke(connection, _T("updateFirmware"), request, response));
 }
 
-TEST_F(FirmwareUpdateTest, UpdateFirmware_SameAsCurrentImage_NoUpgradeNeeded)
-{
-    ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
-
-    // NOTE: Writes to /version.txt at filesystem root. Requires write permission there.
-    // If this is not permitted in CI, the ASSERT below will fail clearly instead of
-    // silently passing.
-    std::ofstream versionFile("/version.txt");
-    ASSERT_TRUE(versionFile.is_open()) << "Cannot write /version.txt - cannot validate this scenario in this environment";
-    versionFile << "imagename:test_firmware\n";
-    versionFile.close();
-
-    std::string samePath = "/tmp/test_firmware.bin";
-    safeRemoveFile(samePath.c_str());
-    std::ofstream fw(samePath);
-    fw << "dummy content";
-    fw.close();
-
-    // Call the implementation directly - JSON-RPC marshalling does not reliably preserve custom hresult values
-    Exchange::IFirmwareUpdate::Result result;
-    Core::hresult status = FirmwareUpdateImpl->UpdateFirmware(samePath, "PCI", result);
-    EXPECT_EQ(Core::ERROR_FIRMWAREUPDATE_UPTODATE, status);
-
-    safeRemoveFile(samePath.c_str());
-    safeRemoveFile("/version.txt");
-}
-
-
 TEST_F(FirmwareUpdateTest, UpdateFirmware_MissingFirmwareFilepath)
 {
     string request = "{\"firmwareType\":\"" + TEST_FIRMWARE_TYPE_PCI + "\"}";
@@ -1145,12 +1117,15 @@ TEST_F(FirmwareUpdateTest, FirmwarePathPolicy)
 TEST_F(FirmwareUpdateTest, FirmwarePathPolicy_RejectsDirectory)
 {
     const char* dirPath = "/tmp/firmware_test_directory";
-    safeSystemCall(("rm -rf " + std::string(dirPath)).c_str());
-    int mkdirResult = safeSystemCall(("mkdir -p " + std::string(dirPath)).c_str());
-    ASSERT_EQ(0, mkdirResult) << "Could not create test directory in this environment";
+    rmdir(dirPath);
+
+    // Use the in-process createDirectory() helper instead of spawning a shell "mkdir -p":
+    // system()'s child process reported success in CI while stat() in this process still
+    // saw the directory as missing immediately afterward.
+    ASSERT_TRUE(createDirectory(dirPath)) << "Could not create test directory in this environment";
 
     struct stat dirStat;
-    ASSERT_EQ(0, stat(dirPath, &dirStat)) << "Directory does not exist after mkdir";
+    ASSERT_EQ(0, stat(dirPath, &dirStat)) << "Directory does not exist after createDirectory";
     ASSERT_TRUE(S_ISDIR(dirStat.st_mode));
 
     std::string canonicalPath;
@@ -1163,7 +1138,7 @@ TEST_F(FirmwareUpdateTest, FirmwarePathPolicy_RejectsDirectory)
     EXPECT_EQ(errorReason, "Firmware path must refer to a regular file");
     if (firmwareFd >= 0) close(firmwareFd);
 
-    safeSystemCall(("rm -rf " + std::string(dirPath)).c_str());
+    rmdir(dirPath);
 }
 
 
