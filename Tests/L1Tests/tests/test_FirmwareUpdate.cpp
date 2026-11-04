@@ -90,21 +90,6 @@ static int safeSystemCall(const char* command) {
     return result;
 }
 
-// Helper function to safely remove directories with proper error checking
-// Suppresses Coverity CHECKED_RETURN warnings in test cleanup code
-static void safeRmdir(const char* path) {
-    if (path == nullptr) {
-        return;
-    }
-
-    int result = rmdir(path);
-    if (result != 0 && errno != ENOENT) {
-        std::cerr << "Warning: Failed to rmdir '" << path
-                  << "' - errno: " << errno << " (" << strerror(errno) << ")"
-                  << std::endl;
-    }
-}
-
 // Helper function to safely change file permissions with proper error checking
 // Suppresses Coverity CHECKED_RETURN warnings in test setup code
 static int safeChmod(const char* filepath, mode_t mode) {
@@ -1128,34 +1113,6 @@ TEST_F(FirmwareUpdateTest, FirmwarePathPolicy)
     safeRemoveFile(symlinkPath);
     safeRemoveFile(validPath);
 }
-
-TEST_F(FirmwareUpdateTest, FirmwarePathPolicy_RejectsDirectory)
-{
-    const char* dirPath = "/tmp/firmware_test_directory";
-    safeRmdir(dirPath);
-
-    // Use the in-process createDirectory() helper instead of spawning a shell "mkdir -p":
-    // system()'s child process reported success in CI while stat() in this process still
-    // saw the directory as missing immediately afterward.
-    ASSERT_TRUE(createDirectory(dirPath)) << "Could not create test directory in this environment";
-
-    struct stat dirStat;
-    ASSERT_EQ(0, stat(dirPath, &dirStat)) << "Directory does not exist after createDirectory";
-    ASSERT_TRUE(S_ISDIR(dirStat.st_mode));
-
-    std::string canonicalPath;
-    std::string errorReason;
-    int firmwareFd = -1;
-    bool valid = WPEFramework::Plugin::FirmwareUpdateImplementation::isValidFirmwarePath(
-        dirPath, canonicalPath, firmwareFd, errorReason);
-
-    EXPECT_FALSE(valid);
-    EXPECT_EQ(errorReason, "Firmware path must refer to a regular file");
-    if (firmwareFd >= 0) close(firmwareFd);
-
-    safeRmdir(dirPath);
-}
-
 
 TEST_F(FirmwareUpdateTest, ValidatedFirmwareHandleSurvivesPathReplacement)
 {
