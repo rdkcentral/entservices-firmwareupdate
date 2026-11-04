@@ -138,6 +138,7 @@ extern string deviceSpecificRegexBin();
 extern string deviceSpecificRegexPath();
 extern bool createDirectory(const std::string &path);
 extern bool copyFileToDirectory(const char *source_file, const char *destination_dir);
+extern bool copyFileToDirectory(const char *source_file, const char *destination_dir, const char *destination_name);
 extern bool FirmwareStatus(std::string& state, std::string& substate, const std::string& mode);
 extern std::string GetCurrentTimestamp();
 extern std::string readProperty(std::string filename, std::string property, std::string delimiter);
@@ -652,6 +653,8 @@ TEST_F(FirmwareUpdateTest, UpdateFirmware_NonexistentFile)
 
 TEST_F(FirmwareUpdateTest, UpdateFirmware_SameAsCurrentImage_NoUpgradeNeeded)
 {
+    ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
+
     // NOTE: Writes to /version.txt at filesystem root. Requires write permission there.
     // If this is not permitted in CI, the ASSERT below will fail clearly instead of
     // silently passing.
@@ -666,8 +669,10 @@ TEST_F(FirmwareUpdateTest, UpdateFirmware_SameAsCurrentImage_NoUpgradeNeeded)
     fw << "dummy content";
     fw.close();
 
-    string request = "{\"firmwareFilepath\":\"" + samePath + "\",\"firmwareType\":\"PCI\"}";
-    EXPECT_EQ(Core::ERROR_FIRMWAREUPDATE_UPTODATE, handler.Invoke(connection, _T("updateFirmware"), request, response));
+    // Call the implementation directly - JSON-RPC marshalling does not reliably preserve custom hresult values
+    Exchange::IFirmwareUpdate::Result result;
+    Core::hresult status = FirmwareUpdateImpl->UpdateFirmware(samePath, "PCI", result);
+    EXPECT_EQ(Core::ERROR_FIRMWAREUPDATE_UPTODATE, status);
 
     safeRemoveFile(samePath.c_str());
     safeRemoveFile("/version.txt");
@@ -1140,7 +1145,13 @@ TEST_F(FirmwareUpdateTest, FirmwarePathPolicy)
 TEST_F(FirmwareUpdateTest, FirmwarePathPolicy_RejectsDirectory)
 {
     const char* dirPath = "/tmp/firmware_test_directory";
-    safeSystemCall(("mkdir -p " + std::string(dirPath)).c_str());
+    safeSystemCall(("rm -rf " + std::string(dirPath)).c_str());
+    int mkdirResult = safeSystemCall(("mkdir -p " + std::string(dirPath)).c_str());
+    ASSERT_EQ(0, mkdirResult) << "Could not create test directory in this environment";
+
+    struct stat dirStat;
+    ASSERT_EQ(0, stat(dirPath, &dirStat)) << "Directory does not exist after mkdir";
+    ASSERT_TRUE(S_ISDIR(dirStat.st_mode));
 
     std::string canonicalPath;
     std::string errorReason;
@@ -1152,7 +1163,7 @@ TEST_F(FirmwareUpdateTest, FirmwarePathPolicy_RejectsDirectory)
     EXPECT_EQ(errorReason, "Firmware path must refer to a regular file");
     if (firmwareFd >= 0) close(firmwareFd);
 
-    safeSystemCall(("rmdir " + std::string(dirPath)).c_str());
+    safeSystemCall(("rm -rf " + std::string(dirPath)).c_str());
 }
 
 
@@ -1633,6 +1644,21 @@ TEST_F(FirmwareUpdateTest, CopyFileToDirectory_NonExistentSource)
 {
     bool result = copyFileToDirectory("/tmp/nonexistent.bin", "/tmp");
     EXPECT_FALSE(result);
+}
+
+// destination_name is only reachable through flashImageThread's internal basename extraction,
+// which can never contain '/' or be empty; exercise the 3-arg overload's own input validation directly.
+TEST_F(FirmwareUpdateTest, CopyFileToDirectory_DestinationNameContainsSlash)
+{
+    const char* sourceFile = "/tmp/test_source_slash.bin";
+    std::ofstream src(sourceFile);
+    src << "content";
+    src.close();
+
+    bool result = copyFileToDirectory(sourceFile, "/tmp/test_dest_dir", "sub/escaped.bin");
+    EXPECT_FALSE(result);
+
+    safeRemoveFile(sourceFile);
 }
 
 TEST_F(FirmwareUpdateTest, FirmwareStatus_WriteMode)
