@@ -90,6 +90,21 @@ static int safeSystemCall(const char* command) {
     return result;
 }
 
+// Helper function to safely remove directories with proper error checking
+// Suppresses Coverity CHECKED_RETURN warnings in test cleanup code
+static void safeRmdir(const char* path) {
+    if (path == nullptr) {
+        return;
+    }
+
+    int result = rmdir(path);
+    if (result != 0 && errno != ENOENT) {
+        std::cerr << "Warning: Failed to rmdir '" << path
+                  << "' - errno: " << errno << " (" << strerror(errno) << ")"
+                  << std::endl;
+    }
+}
+
 // Helper function to safely change file permissions with proper error checking
 // Suppresses Coverity CHECKED_RETURN warnings in test setup code
 static int safeChmod(const char* filepath, mode_t mode) {
@@ -1117,7 +1132,7 @@ TEST_F(FirmwareUpdateTest, FirmwarePathPolicy)
 TEST_F(FirmwareUpdateTest, FirmwarePathPolicy_RejectsDirectory)
 {
     const char* dirPath = "/tmp/firmware_test_directory";
-    rmdir(dirPath);
+    safeRmdir(dirPath);
 
     // Use the in-process createDirectory() helper instead of spawning a shell "mkdir -p":
     // system()'s child process reported success in CI while stat() in this process still
@@ -1138,7 +1153,7 @@ TEST_F(FirmwareUpdateTest, FirmwarePathPolicy_RejectsDirectory)
     EXPECT_EQ(errorReason, "Firmware path must refer to a regular file");
     if (firmwareFd >= 0) close(firmwareFd);
 
-    rmdir(dirPath);
+    safeRmdir(dirPath);
 }
 
 
