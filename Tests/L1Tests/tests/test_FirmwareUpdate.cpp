@@ -1576,6 +1576,7 @@ TEST_F(FirmwareUpdateTest, CopyFileToDirectory_ValidFile)
     safeRemoveFile(sourceFile);
     safeRemoveFile(destFile.c_str());
     rmdir(destDir);
+
 }
 
 TEST_F(FirmwareUpdateTest, CopyFileToDirectory_NullParameters)
@@ -3294,6 +3295,8 @@ TEST_F(FirmwareUpdateTest, OnJSONRPCError_ComprehensiveErrorHandling)
         context, longMethod, longParams, 123, errormessage);
     (void)result3;
 }
+
+
 
 TEST_F(FirmwareUpdateTest, MultipleInstances_IndependentOperation)
 {
