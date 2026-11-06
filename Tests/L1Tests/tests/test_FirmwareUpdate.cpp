@@ -3368,6 +3368,8 @@ TEST_F(FirmwareUpdateTest, Notification_Register_Success)
     EXPECT_EQ(Core::ERROR_NONE, result);
 }
 
+
+
 TEST_F(FirmwareUpdateTest, Notification_Unregister_Success)
 {
     ASSERT_TRUE(FirmwareUpdateImpl.IsValid());
