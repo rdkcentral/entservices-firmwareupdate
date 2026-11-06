@@ -1249,7 +1249,8 @@ namespace WPEFramework {
                 flashThread.join();  // Ensure the thread has completed before main exits
             }
             // Start a new flashing thread
-            flashThread = std::thread(static_cast<void (FirmwareUpdateImplementation::*)(int, std::string, std::string)>(&FirmwareUpdateImplementation::flashImageThread), this, firmwareFd, std::move(canonicalFirmwarePath), std::move(firmwareType));
+            // firmwareType is a const ref; std::move() on it would not actually move, only copy, so pass it plainly
+            flashThread = std::thread(static_cast<void (FirmwareUpdateImplementation::*)(int, std::string, std::string)>(&FirmwareUpdateImplementation::flashImageThread), this, firmwareFd, std::move(canonicalFirmwarePath), firmwareType);
             result.success = true;
             status =Core::ERROR_NONE;
             SWUPDATEINFO("UpdateFirmware started flash thread path=%s type=%s", firmwareFilepath.c_str(), firmwareType.c_str());
