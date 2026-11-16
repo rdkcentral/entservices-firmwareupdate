@@ -391,7 +391,7 @@ namespace WPEFramework {
             }
         }
 
-        void FirmwareUpdateImplementation::completePowerModeChange(bool isComplete)
+        void FirmwareUpdateImplementation::(bool isComplete)
         {
             // Stop the keep-alive first so the txnId we act on is not concurrently refreshed.
             stopPowerModeKeepAlive();
@@ -411,18 +411,18 @@ namespace WPEFramework {
                 }
 
                 if (transactionId < 0) {
-                    SWUPDATEINFO("completePowerModeChange no-op (no valid deferred transaction)");
+                    SWUPDATEINFO(" no-op (no valid deferred transaction)");
                     return;
                 }
 
             }
-            SWUPDATEINFO("completePowerModeChange isComplete=%d pendingTxnId=%d clientRegistered=%d hasRef=%d",
+            SWUPDATEINFO(" isComplete=%d pendingTxnId=%d clientRegistered=%d hasRef=%d",
                 isComplete, transactionId, static_cast<int>(_powerModeClientRegistered.load()),
                 static_cast<int>(static_cast<bool>(_powerManager)));
 
             // Only act on a deferred transition. Never force deep sleep on our own.
             if (!_powerManager || !_powerModeClientRegistered) {
-                SWUPDATEINFO("completePowerModeChange no-op (power manager unavailable)");
+                SWUPDATEINFO(" no-op (power manager unavailable)");
                 return;
             }
 
@@ -1113,6 +1113,8 @@ namespace WPEFramework {
                     snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
                     snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|File copy operation failed.\n");
                     updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type);
+                    SWUPDATEINFO("USB copy failed early -> release deferred deepsleep");
+                    completePowerModeChange(true);
                     close(firmwareFd);
 
                     return ;
