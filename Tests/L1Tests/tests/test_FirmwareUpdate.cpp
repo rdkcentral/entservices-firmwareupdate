@@ -138,6 +138,7 @@ extern string deviceSpecificRegexBin();
 extern string deviceSpecificRegexPath();
 extern bool createDirectory(const std::string &path);
 extern bool copyFileToDirectory(const char *source_file, const char *destination_dir);
+extern bool copyFileToDirectory(const char *source_file, const char *destination_dir, const char *destination_name);
 extern bool FirmwareStatus(std::string& state, std::string& substate, const std::string& mode);
 extern std::string GetCurrentTimestamp();
 extern std::string readProperty(std::string filename, std::string property, std::string delimiter);
@@ -1590,6 +1591,21 @@ TEST_F(FirmwareUpdateTest, CopyFileToDirectory_NonExistentSource)
 {
     bool result = copyFileToDirectory("/tmp/nonexistent.bin", "/tmp");
     EXPECT_FALSE(result);
+}
+
+// destination_name is only reachable through flashImageThread's internal basename extraction,
+// which can never contain '/' or be empty; exercise the 3-arg overload's own input validation directly.
+TEST_F(FirmwareUpdateTest, CopyFileToDirectory_DestinationNameContainsSlash)
+{
+    const char* sourceFile = "/tmp/test_source_slash.bin";
+    std::ofstream src(sourceFile);
+    src << "content";
+    src.close();
+
+    bool result = copyFileToDirectory(sourceFile, "/tmp/test_dest_dir", "sub/escaped.bin");
+    EXPECT_FALSE(result);
+
+    safeRemoveFile(sourceFile);
 }
 
 TEST_F(FirmwareUpdateTest, FirmwareStatus_WriteMode)
