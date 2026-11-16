@@ -391,7 +391,7 @@ namespace WPEFramework {
             }
         }
 
-        void FirmwareUpdateImplementation::(bool isComplete)
+void FirmwareUpdateImplementation::completePowerModeChange(bool isComplete)
         {
             // Stop the keep-alive first so the txnId we act on is not concurrently refreshed.
             stopPowerModeKeepAlive();
