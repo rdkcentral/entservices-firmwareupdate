@@ -23,13 +23,33 @@ std::atomic<bool> isFlashingInProgress(false);
 std::mutex flashMutex;
 std::mutex logMutex;
 void startProgressTimer() ;
+
+// Case 1 (flashing): initial hold must exceed the keep-alive refresh interval
+// with margin, else the refresh can lose the race against PowerManager's own
+// ack timeout (see RDKEMW-21447 timing fix).
+static constexpr int FLASH_HOLD_INITIAL_DELAY_SEC     = 300;
+static constexpr int FLASH_HOLD_REFRESH_INTERVAL_SEC  = 280;
+static constexpr int FLASH_HOLD_REFRESH_DELAY_SEC     = 600;
+
+// Case 2 (reboot/maintenance hold): 630s window, refreshed every 300s.
+static constexpr int REBOOT_HOLD_DELAY_SEC            = 630;
+static constexpr int REBOOT_HOLD_REFRESH_INTERVAL_SEC = 300;
+
+static constexpr int POWERMGR_RETRY_INTERVAL_SEC      = 1;
+
 namespace WPEFramework {
     namespace Plugin {
         SERVICE_REGISTRATION(FirmwareUpdateImplementation, 1, 0);
 
         FirmwareUpdateImplementation::FirmwareUpdateImplementation()
             : _adminLock(),
-            mShell(nullptr)
+            mShell(nullptr),
+            _powerModeClientId(0),
+            _powerModeClientRegistered(false),
+            _pendingPowerTransactionId(-1),
+            _rebootPending(false),
+            _maintenancePending(false),
+            _powerModeNotification(this)
         {
             LOGINFO("Create FirmwareUpdateImplementation Instance");
 
@@ -61,8 +81,308 @@ namespace WPEFramework {
                 LOGINFO("flashThread is still running or joinable. Joining now...");
                 flashThread.join();  // Ensure the thread has completed before main exits
             }
+            stopPowerManagerRetry();
+            shutdownPowerModeKeepAlive();
+            unregisterPowerManager();
             mShell = nullptr;
             DeinitializeIARM();
+        }
+
+        void FirmwareUpdateImplementation::PowerModeNotification::OnPowerModePreChange(
+            const Exchange::IPowerManager::PowerState currentState,
+            const Exchange::IPowerManager::PowerState newState, const int transactionId,
+            const int stateChangeAfter)
+        {
+            _parent->handlePowerModePreChange(currentState, newState, transactionId, stateChangeAfter);
+        }
+
+        void FirmwareUpdateImplementation::registerPowerManager()
+        {
+            SWUPDATEINFO("registerPowerManager entry mShell=%p existingRef=%d", mShell, static_cast<int>(static_cast<bool>(_powerManager)));
+            if (mShell == nullptr || _powerManager) {
+                return;
+            }
+
+            _powerManager = PowerManagerInterfaceBuilder(_T("org.rdk.PowerManager"))
+                                .withIShell(mShell)
+                                .withRetryIntervalMS(0)
+                                .withRetryCount(1)
+                                .createInterface();
+            if (!_powerManager) {
+                SWUPDATEERR("Failed to get PowerManager instance");
+                return;
+            }
+
+            auto* preChange = _powerModeNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>();
+            Core::hresult addRc = _powerManager->AddPowerModePreChangeClient("FirmwareUpdate", _powerModeClientId);
+            if (addRc == Core::ERROR_NONE) {
+                _powerModeClientRegistered = true;
+            }
+            Core::hresult regRc = (addRc == Core::ERROR_NONE)
+                ? _powerManager->Register(preChange)
+                : Core::ERROR_GENERAL;
+            if (regRc != Core::ERROR_NONE || addRc != Core::ERROR_NONE) {
+                SWUPDATEERR("PowerManager register failed regRc=%u addRc=%u", regRc, addRc);
+                unregisterPowerManager();
+                return;
+            }
+            SWUPDATEINFO("PowerManager pre-change client registered id=%u", _powerModeClientId);
+        }
+
+        void FirmwareUpdateImplementation::unregisterPowerManager()
+        {
+            SWUPDATEINFO("unregisterPowerManager entry hasRef=%d clientRegistered=%d clientId=%u",
+                static_cast<int>(static_cast<bool>(_powerManager)), static_cast<int>(_powerModeClientRegistered.load()), _powerModeClientId);
+            if (!_powerManager) {
+                return;
+            }
+
+            if (_powerModeClientRegistered) {
+                _powerManager->RemovePowerModePreChangeClient(_powerModeClientId);
+                _powerModeClientRegistered = false;
+            }
+            _powerManager->Unregister(_powerModeNotification.baseInterface<Exchange::IPowerManager::IModePreChangeNotification>());
+            _powerManager.Reset();
+        }
+
+        void FirmwareUpdateImplementation::startPowerManagerRetry()
+        {
+            std::shared_ptr<PowerManagerRetryState> state = std::make_shared<PowerManagerRetryState>();
+            state->running = true;
+
+            std::thread([this, state]() {
+                std::unique_lock<std::mutex> lock(state->mutex);
+                while (!state->cancelled) {
+                    if (state->cv.wait_for(lock, std::chrono::seconds(POWERMGR_RETRY_INTERVAL_SEC),
+                            [&state]() { return state->cancelled; })) {
+                        break;
+                    }
+                    lock.unlock();
+                    registerPowerManager();
+                    const bool registered = _powerModeClientRegistered.load();
+                    lock.lock();
+                    if (registered) {
+                        break;
+                    }
+                }
+                // Nothing below may touch 'this': the destructor can return once running is false.
+                state->running = false;
+                state->cv.notify_all();
+            }).detach();
+            _powerManagerRetry = std::move(state);
+        }
+
+        void FirmwareUpdateImplementation::stopPowerManagerRetry()
+        {
+            std::shared_ptr<PowerManagerRetryState> state = _powerManagerRetry;
+            if (!state) {
+                return;
+            }
+            std::unique_lock<std::mutex> lock(state->mutex);
+            state->cancelled = true;
+            state->cv.notify_all();
+            state->cv.wait(lock, [&state]() { return !state->running; });
+        }
+
+        void FirmwareUpdateImplementation::handlePowerModePreChange(
+            const Exchange::IPowerManager::PowerState currentState,
+            const Exchange::IPowerManager::PowerState newState, const int transactionId,
+            const int stateChangeAfter)
+        {
+            SWUPDATEINFO("OnPowerModePreChange cur=%d new=%d txnId=%d timeout=%d flashing=%d clientRegistered=%d",
+                currentState, newState, transactionId, stateChangeAfter,
+                isFlashingInProgress.load(), static_cast<int>(_powerModeClientRegistered.load()));
+
+            const bool enteringDeepSleep =
+                (newState == Exchange::IPowerManager::PowerState::POWER_STATE_STANDBY_DEEP_SLEEP) &&
+                (currentState == Exchange::IPowerManager::PowerState::POWER_STATE_STANDBY ||
+                 currentState == Exchange::IPowerManager::PowerState::POWER_STATE_STANDBY_LIGHT_SLEEP);
+
+            if (!_powerModeClientRegistered || !_powerManager) {
+                SWUPDATEINFO("Skipping pre-change (PowerManager client not registered)");
+                return;
+            }
+
+            if (!enteringDeepSleep) {
+                // A different transition means PowerManager's active transaction moved on;
+                // any keep-alive still refreshing the old deep-sleep txnId is now stale.
+                // Callback thread: do not wait for an in-flight refresh, PowerManager rejects stale txnIds.
+                stopPowerModeKeepAlive(false);
+                {
+                    std::lock_guard<std::mutex> lock(_powerModeMutex);
+                    _pendingPowerTransactionId = -1;
+                }
+                SWUPDATEINFO("Non-deep-sleep transition -> ack txnId=%d", transactionId);
+                _powerManager->PowerModePreChangeComplete(_powerModeClientId, transactionId);
+                return;
+            }
+
+            if (isFlashingInProgress.load()) {
+                // Case 1: defer indefinitely. Refresh the delay on a keep-alive thread
+                // until the flash reaches a terminal state (Case 2 / 3 / 4).
+                {
+                    std::lock_guard<std::mutex> lock(_powerModeMutex);
+                    _pendingPowerTransactionId = transactionId;
+                }
+                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, FLASH_HOLD_INITIAL_DELAY_SEC);
+                SWUPDATEINFO("[Case 1] Deferred deepsleep for flash txnId=%d (initial %ds, keep-alive will refresh)",
+                    transactionId, FLASH_HOLD_INITIAL_DELAY_SEC);
+                startPowerModeKeepAlive(transactionId, FLASH_HOLD_REFRESH_INTERVAL_SEC, FLASH_HOLD_REFRESH_DELAY_SEC,
+                    []() { return isFlashingInProgress.load(); });
+            } else if (_rebootPending.load() || _maintenancePending.load()) {
+                {
+                    std::lock_guard<std::mutex> lock(_powerModeMutex);
+                    _pendingPowerTransactionId = transactionId;
+                }
+                SWUPDATEINFO("[Case 2 late] Reboot/maintenance pending maint=%d reboot=%d; delaying deepsleep txnId=%d",
+                    _maintenancePending.load(), _rebootPending.load(), transactionId);
+                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, REBOOT_HOLD_DELAY_SEC);
+                // Keep refreshing the reboot-hold window; a later, different txnId (new event)
+                // will stop this loop before it can send a delay for the now-stale id.
+                startPowerModeKeepAlive(transactionId, REBOOT_HOLD_REFRESH_INTERVAL_SEC, REBOOT_HOLD_DELAY_SEC,
+                    [this]() { return _rebootPending.load() || _maintenancePending.load(); });
+            } else {
+                SWUPDATEINFO("No flash in progress -> ack deepsleep txnId=%d", transactionId);
+                _powerManager->PowerModePreChangeComplete(_powerModeClientId, transactionId);
+            }
+        }
+
+        void FirmwareUpdateImplementation::startPowerModeKeepAlive(int transactionId, int refreshIntervalSec,
+            int delaySec, std::function<bool()> stillPending)
+        {
+            // Only updates state and wakes the worker; never joins or waits, so PowerManager's callback thread is not blocked.
+            std::lock_guard<std::mutex> lock(_powerModeKeepAliveMutex);
+            if (_powerModeKeepAliveQuit) {
+                return;
+            }
+            _powerModeKeepAliveTxnId = transactionId;
+            _powerModeKeepAliveIntervalSec = refreshIntervalSec;
+            _powerModeKeepAliveDelaySec = delaySec;
+            _powerModeKeepAliveStillPending = std::move(stillPending);
+            _powerModeKeepAliveActive = true;
+            ++_powerModeKeepAliveGeneration;
+            if (!_powerModeKeepAliveThread.joinable()) {
+                _powerModeKeepAliveThread = std::thread(&FirmwareUpdateImplementation::powerModeKeepAliveLoop, this);
+            }
+            _powerModeKeepAliveCv.notify_all();
+        }
+
+        void FirmwareUpdateImplementation::stopPowerModeKeepAlive(bool waitForIdle)
+        {
+            std::unique_lock<std::mutex> lock(_powerModeKeepAliveMutex);
+            if (_powerModeKeepAliveActive) {
+                SWUPDATEINFO("KeepAlive stopped");
+            }
+            _powerModeKeepAliveActive = false;
+            ++_powerModeKeepAliveGeneration;
+            _powerModeKeepAliveCv.notify_all();
+            if (waitForIdle) {
+                _powerModeKeepAliveCv.wait(lock, [this]() { return !_powerModeKeepAliveRefreshing; });
+            }
+        }
+
+        void FirmwareUpdateImplementation::shutdownPowerModeKeepAlive()
+        {
+            {
+                std::lock_guard<std::mutex> lock(_powerModeKeepAliveMutex);
+                _powerModeKeepAliveQuit = true;
+                _powerModeKeepAliveActive = false;
+                ++_powerModeKeepAliveGeneration;
+                _powerModeKeepAliveCv.notify_all();
+            }
+            if (_powerModeKeepAliveThread.joinable()) {
+                _powerModeKeepAliveThread.join();
+            }
+        }
+
+        void FirmwareUpdateImplementation::powerModeKeepAliveLoop()
+        {
+            // The mutex guards keep-alive state only; it is released while waiting and during the refresh call.
+            std::unique_lock<std::mutex> lock(_powerModeKeepAliveMutex);
+            while (!_powerModeKeepAliveQuit) {
+                if (!_powerModeKeepAliveActive) {
+                    _powerModeKeepAliveCv.wait(lock, [this]() { return _powerModeKeepAliveQuit || _powerModeKeepAliveActive; });
+                    continue;
+                }
+
+                const uint64_t generation = _powerModeKeepAliveGeneration;
+                const int transactionId = _powerModeKeepAliveTxnId;
+                const int intervalSec = _powerModeKeepAliveIntervalSec;
+                const int delaySec = _powerModeKeepAliveDelaySec;
+                SWUPDATEINFO("KeepAlive started txnId=%d", transactionId);
+
+                while (!_powerModeKeepAliveQuit && _powerModeKeepAliveGeneration == generation) {
+                    _powerModeKeepAliveCv.wait_for(lock, std::chrono::seconds(intervalSec),
+                        [this, generation]() { return _powerModeKeepAliveQuit || _powerModeKeepAliveGeneration != generation; });
+                    if (_powerModeKeepAliveQuit || _powerModeKeepAliveGeneration != generation) {
+                        break;
+                    }
+                    if (!_powerModeKeepAliveStillPending()) {
+                        _powerModeKeepAliveActive = false;
+                        break;
+                    }
+
+                    _powerModeKeepAliveRefreshing = true;
+                    lock.unlock();
+                    if (_powerManager && _powerModeClientRegistered) {
+                        _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, delaySec);
+                        SWUPDATEINFO("KeepAlive refreshed delay txnId=%d (%ds)", transactionId, delaySec);
+                    }
+                    lock.lock();
+                    _powerModeKeepAliveRefreshing = false;
+                    _powerModeKeepAliveCv.notify_all();
+                }
+                SWUPDATEINFO("KeepAlive exiting txnId=%d", transactionId);
+            }
+        }
+
+        void FirmwareUpdateImplementation::completePowerModeChange(bool isComplete)
+        {
+            // Stop the keep-alive first so the txnId we act on is not concurrently refreshed.
+            stopPowerModeKeepAlive();
+
+            int transactionId = -1;
+            {
+                std::lock_guard<std::mutex> lock(_powerModeMutex);
+                transactionId = _pendingPowerTransactionId;
+
+                // The PowerManager transaction is only valid when it was actually deferred
+                // from a pre-change callback. Repeated terminal-path calls must not send a
+                // stale/invalid txnId back to PowerManager.
+                if (isComplete) {
+                    _pendingPowerTransactionId = -1;
+                    _rebootPending = false;
+                    _maintenancePending = false;
+                }
+
+                if (transactionId < 0) {
+                    SWUPDATEINFO("completePowerModeChange no-op (no valid deferred transaction)");
+                    return;
+                }
+
+            }
+            SWUPDATEINFO("completePowerModeChange isComplete=%d pendingTxnId=%d clientRegistered=%d hasRef=%d",
+                isComplete, transactionId, static_cast<int>(_powerModeClientRegistered.load()),
+                static_cast<int>(static_cast<bool>(_powerManager)));
+
+            // Only act on a deferred transition. Never force deep sleep on our own.
+            if (!_powerManager || !_powerModeClientRegistered) {
+                SWUPDATEINFO("completePowerModeChange no-op (power manager unavailable)");
+                return;
+            }
+
+            if (!isComplete) {
+                // Case 2: success + reboot=true -> hold deepsleep for the reboot window, refreshed
+                // periodically so the hold survives past a single 630s deadline.
+                SWUPDATEINFO("[Case 2] Holding deepsleep %ds for reboot txnId=%d", REBOOT_HOLD_DELAY_SEC, transactionId);
+                _powerManager->DelayPowerModeChangeBy(_powerModeClientId, transactionId, REBOOT_HOLD_DELAY_SEC);
+                startPowerModeKeepAlive(transactionId, REBOOT_HOLD_REFRESH_INTERVAL_SEC, REBOOT_HOLD_DELAY_SEC,
+                    [this]() { return _rebootPending.load() || _maintenancePending.load(); });
+            } else {
+                // Case 3 (success + reboot=false) or Case 4 (failure) -> let deepsleep proceed.
+                SWUPDATEINFO("[Case 3/4] Acking deepsleep transition txnId=%d", transactionId);
+                _powerManager->PowerModePreChangeComplete(_powerModeClientId, transactionId);
+            }
         }
 
         void FirmwareUpdateImplementation::InitializeIARM()
@@ -439,8 +759,18 @@ namespace WPEFramework {
 
                 ret = v_secure_system("/lib/rdk/imageFlasher.sh '%s' '%s' '%s' '%s' '%s' '%s' >> /opt/logs/swupdate.log", proto, server_url, difw_path, file+1, rflag, uptype);
 
+                const bool flashSucceeded = (ret == 0);
+                _rebootPending = (flashSucceeded &&
+                    strncmp(reboot_flag, "true", 4) == 0 &&
+                    upgrade_type != PDRI_UPGRADE);
+                _maintenancePending = (strncmp(maint, "true", 4) == 0) &&
+                    (upgrade_type != PDRI_UPGRADE) &&
+                    (flashSucceeded ? _rebootPending.load() : true);
+
                 // Reset flashing status
                 isFlashingInProgress = false;
+                SWUPDATEINFO("imageFlasher.sh returned ret=%d proto=%s upgrade_type=%d rebootPending=%d maintenancePending=%d",
+                    ret, proto, upgrade_type, _rebootPending.load(), _maintenancePending.load());
 
                 // Wait for the timer thread to complete
                 if (timerThread.joinable()) timerThread.join();
@@ -450,6 +780,7 @@ namespace WPEFramework {
                 SWUPDATEINFO("flash_status = %d and ret = %d\n",flash_status, ret);
             } else {
                 SWUPDATEERR("imageFlasher.sh required for flash image. This is device specific implementation\n");
+                isFlashingInProgress = false;
             }
             if (flash_status == 0 && (upgrade_type != PDRI_UPGRADE)) {
                 SWUPDATEINFO("doCDL success.\n");
@@ -481,6 +812,8 @@ namespace WPEFramework {
                 {                    
                     updateUpgradeFlag(0,2);
                 }
+                SWUPDATEINFO("Failure branch -> release deferred deepsleep (if any)");
+                completePowerModeChange(true);
 
             } else if (true == mediaclient) {                
                 SWUPDATEINFO("Image Flashing is success\n");
@@ -511,14 +844,31 @@ namespace WPEFramework {
                         fprintf(fp, "%s\n", file+1);
                         fclose(fp);
                     }
-
+#if 0 // Simulation Critical reboot case code.
+                    SWUPDATEINFO("USB success reboot_flag=%s upgrade_type=%d", reboot_flag, upgrade_type);
+                    if (strncmp(reboot_flag, "true", 4) == 0 && upgrade_type != PDRI_UPGRADE) {
+                        SWUPDATEINFO("USB success + reboot=true -> hold deepsleep %ds; UI owns reboot", REBOOT_HOLD_DELAY_SEC);
+                        completePowerModeChange(false);
+                    } else {
+                        SWUPDATEINFO("USB success + reboot=false/PDRI -> ack deferred deepsleep");
+                        completePowerModeChange(true);
+                    }
+                    SWUPDATEINFO("Entering postFlash: reboot_flag =%s, maint%s\n", reboot_flag, maint);
+                    postFlash(maint, file+1, upgrade_type, reboot_flag ,initiated_type);
+                    SWUPDATEINFO("postFlash returned");
+#endif
                     dispatchAndUpdateEvent(_FLASHING_SUCCEEDED,"");
                     dispatchAndUpdateEvent(_WAITING_FOR_REBOOT,"");
+                    
                 }	
-                else
+                else //non-mediaclient and non-zero ret
                 {
+                    SWUPDATEINFO("non-USB success -> postFlash reboot_flag=%s maint=%s upgrade_type=%d", reboot_flag, maint, upgrade_type);
                     postFlash(maint, file+1, upgrade_type, reboot_flag ,initiated_type);
                     dispatchAndUpdateEvent(_FLASHING_SUCCEEDED,"");
+                    SWUPDATEINFO("non-USB success -> complete deferred deepsleep rebootPending=%d",
+                        _rebootPending.load());
+                    completePowerModeChange(!_rebootPending.load());
                 }
 
                 if(std::string(initiated_type) == "device")
@@ -530,6 +880,8 @@ namespace WPEFramework {
                 snprintf(fwdls.status, sizeof(fwdls.status), "Status|Download complete\n");
                 snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Download complete\n");
                 snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|");
+                //SWUPDATEINFO("Non-mediaclient success -> release deferred deepsleep");
+                completePowerModeChange(true);
             }
 
             if (Utils::fileExists(headerinfofile)) {
@@ -586,9 +938,15 @@ namespace WPEFramework {
         uint32_t FirmwareUpdateImplementation::Configure(PluginHost::IShell* shell)
         {
             LOGINFO("Configuring FirmwareUpdateImplementation");
+            SWUPDATEINFO("Configure invoked shell=%p", shell);
             uint32_t result = Core::ERROR_NONE;
             ASSERT(shell != nullptr);
             mShell = shell;
+            registerPowerManager();
+            if (!_powerModeClientRegistered.load()) {
+                SWUPDATEINFO("PowerManager not ready; retrying registration every %ds", POWERMGR_RETRY_INTERVAL_SEC);
+                startPowerManagerRetry();
+            }
             return result;
         }
 
@@ -663,7 +1021,13 @@ namespace WPEFramework {
 
 
             const char *server_url ="";
-            const char *reboot_flag = "false";
+            char rebootFlag[16] = "false";
+            char rfcType[] = "thunderapi";
+            if (read_RFCProperty(rfcType, TR181_AUTOREBOOT_ENABLE, rebootFlag, sizeof(rebootFlag)) != READ_RFC_SUCCESS) {
+                snprintf(rebootFlag, sizeof(rebootFlag), "false");
+            }
+            const char *reboot_flag = rebootFlag;
+            SWUPDATEINFO("flashImageThread reboot_flag(RFC)=%s firmwareType=%s", reboot_flag, firmwareType.c_str());
             const char *proto = "usb";
             const char *maint = "false";
             const char *initiated_type = "user";
@@ -685,6 +1049,8 @@ namespace WPEFramework {
                     snprintf(fwdls.FwUpdateState, sizeof(fwdls.FwUpdateState), "FwUpdateState|Failed\n");
                     snprintf(fwdls.failureReason, sizeof(fwdls.failureReason), "FailureReason|File copy operation failed.\n");
                     updateFWDownloadStatus(&fwdls, dri.c_str(),initiated_type);
+                    SWUPDATEINFO("USB copy failed early -> release deferred deepsleep");
+                    completePowerModeChange(true);
 
                     return ;
                 }
@@ -695,6 +1061,16 @@ namespace WPEFramework {
                     SWUPDATEINFO("Upgrade file path after copy %s \n" ,upgrade_file.c_str());
                 }
             }
+
+            #if 0 //Used to simulate maintenance critical reboot scenarios.
+            if (strncmp(reboot_flag, "true", 4) == 0)
+            {
+                maint = "true";
+                SWUPDATEINFO("Simulation : force maint=%s\n", maint);
+            }
+            #endif
+
+            SWUPDATEINFO("calling flashImage(reboot_flag=%s, maint=%s)\n", reboot_flag, maint);
 
             //Note : flashImage() is combination of both rdkfwupdater/src/flash.c(Flashing part of deviceInitiatedFWDnld.sh) and Flashing part of userInitiatedFWDnld.sh . For now except upgrade_file ,upgrade_type all other param are passed with default value .other param useful when for future implementations
             // Call the actual flashing function
@@ -796,6 +1172,8 @@ namespace WPEFramework {
                 return status;
             }
 
+            _rebootPending = false;
+
             if (flashThread.joinable()) {
                 SWUPDATEINFO("flashThread is still running or joinable. Joining now...");
                 flashThread.join();  // Ensure the thread has completed before main exits
@@ -804,6 +1182,7 @@ namespace WPEFramework {
             flashThread = std::thread(&WPEFramework::Plugin::FirmwareUpdateImplementation::flashImageThread, this, firmwareFilepath, firmwareType);
             result.success = true;
             status =Core::ERROR_NONE;
+            SWUPDATEINFO("UpdateFirmware started flash thread path=%s type=%s", firmwareFilepath.c_str(), firmwareType.c_str());
 
             return status;
         }
