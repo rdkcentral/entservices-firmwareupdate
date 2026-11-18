@@ -23,6 +23,7 @@
 #include <interfaces/Ids.h>
 #include <interfaces/IFirmwareUpdate.h>
 #include <interfaces/IConfiguration.h>
+#include <interfaces/IPowerManager.h>
 #include "tracing/Logging.h"
 #include <vector>
 #include "sysMgr.h"
@@ -30,6 +31,10 @@
 #include <core/core.h>
 #include <plugins/plugins.h>
 #include "FirmwareUpdateHelper.h"
+#include "PowerManagerInterface.h"
+#include <functional>
+#include <condition_variable>
+#include <memory>
 
 std::thread flashThread;
 
@@ -56,6 +61,32 @@ namespace Plugin {
         END_INTERFACE_MAP
 
     public:
+        class PowerModeNotification : public Exchange::IPowerManager::IModePreChangeNotification {
+        public:
+            explicit PowerModeNotification(FirmwareUpdateImplementation* parent)
+                : _parent(parent)
+            {
+            }
+
+            BEGIN_INTERFACE_MAP(PowerModeNotification)
+            INTERFACE_ENTRY(Exchange::IPowerManager::IModePreChangeNotification)
+            END_INTERFACE_MAP
+
+            void OnPowerModePreChange(const Exchange::IPowerManager::PowerState currentState,
+                const Exchange::IPowerManager::PowerState newState, const int transactionId,
+                const int stateChangeAfter) override;
+
+            template <typename T>
+            T* baseInterface()
+            {
+                static_assert(std::is_base_of<T, PowerModeNotification>(), "base type mismatch");
+                return static_cast<T*>(this);
+            }
+
+        private:
+            FirmwareUpdateImplementation* _parent;
+        };
+
         enum Event {
             ON_UPDATE_STATE_CHANGE,
             ON_FLASHING_STATE_CHANGE
@@ -117,9 +148,53 @@ namespace Plugin {
         uint32_t Configure(PluginHost::IShell* shell);
 
     private:
+        // Held by the detached retry thread too, so the destructor can cancel it and wait for it to finish.
+        struct PowerManagerRetryState {
+            std::mutex mutex;
+            std::condition_variable cv;
+            bool cancelled = false;
+            bool running = false;
+        };
+
+        void registerPowerManager();
+        void unregisterPowerManager();
+        void startPowerManagerRetry();
+        void stopPowerManagerRetry();
+        void handlePowerModePreChange(const Exchange::IPowerManager::PowerState currentState,
+            const Exchange::IPowerManager::PowerState newState, const int transactionId,
+            const int stateChangeAfter);
+        void completePowerModeChange(bool isComplete);
+        void startPowerModeKeepAlive(int transactionId, int refreshIntervalSec, int delaySec, std::function<bool()> stillPending);
+        void stopPowerModeKeepAlive(bool waitForIdle = true);
+        void shutdownPowerModeKeepAlive();
+        void powerModeKeepAliveLoop();
+
         mutable Core::CriticalSection _adminLock;
         std::list<Exchange::IFirmwareUpdate::INotification*> _FirmwareUpdateNotification;
         PluginHost::IShell* mShell;
+        PowerManagerInterfaceRef _powerManager;
+        uint32_t _powerModeClientId;
+        // Written by the retry thread, read by callback and flash threads.
+        std::atomic<bool> _powerModeClientRegistered;
+        std::shared_ptr<PowerManagerRetryState> _powerManagerRetry;
+        int _pendingPowerTransactionId;
+        std::mutex _powerModeMutex;
+        std::atomic<bool> _rebootPending;
+        std::atomic<bool> _maintenancePending;
+        // One long-lived worker; callers only change this state under the mutex, which is never held across a wait or the refresh call.
+        std::mutex _powerModeKeepAliveMutex;
+        std::condition_variable _powerModeKeepAliveCv;
+        std::thread _powerModeKeepAliveThread;
+        std::function<bool()> _powerModeKeepAliveStillPending;
+        uint64_t _powerModeKeepAliveGeneration = 0;
+        int _powerModeKeepAliveTxnId = -1;
+        int _powerModeKeepAliveIntervalSec = 0;
+        int _powerModeKeepAliveDelaySec = 0;
+        bool _powerModeKeepAliveActive = false;
+        bool _powerModeKeepAliveRefreshing = false;
+        bool _powerModeKeepAliveQuit = false;
+        // Core::Sink prevents deletion when PowerManager releases its reference.
+        Core::Sink<PowerModeNotification> _powerModeNotification;
         
         void dispatchEvent(Event, const JsonObject &params);
         void Dispatch(Event event, const JsonObject params);
