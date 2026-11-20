@@ -186,7 +186,8 @@ jobs:
           path: entservices-apis
           ref: ${{env.INTERFACES_REF}}
           #token : ${{ secrets.RDKCM_RDKE }}
-          run: rm -rf $GITHUB_WORKSPACE/entservices-apis/jsonrpc/DTV.json
+      - name: Remove unused DTV API definition
+        run: rm -f "$GITHUB_WORKSPACE/entservices-apis/jsonrpc/DTV.json"
 
       - name: Apply patches entservices-apis
         run: |
@@ -423,7 +424,6 @@ jobs:
           -DDISABLE_SECURITY_TOKEN
           -DENABLE_DEVICE_MANUFACTURER_INFO"
           -DCOMCAST_CONFIG=OFF
-          -DCMAKE_DISABLE_FIND_PACKAGE_DS=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_IARMBus=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_Udev=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RFC=ON
@@ -431,8 +431,6 @@ jobs:
           -DLIBOPKG_LIBRARIES=""
           -DLIBOPKG_INCLUDE_DIRS=""
           -DCMAKE_BUILD_TYPE=Debug
-          -DDS_FOUND=ON
-          -DHAS_FRONT_PANEL=ON
           -DPLUGIN_FIRMWAREUPDATE=ON
           -DRDK_SERVICES_L1_TEST=ON
           -DUSE_THUNDER_R4=ON
@@ -497,13 +495,11 @@ jobs:
           -DHAS_RBUS
           -DENABLE_DEVICE_MANUFACTURER_INFO"
           -DCOMCAST_CONFIG=OFF
-          -DCMAKE_DISABLE_FIND_PACKAGE_DS=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_IARMBus=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_Udev=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RFC=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RBus=ON
           -DCMAKE_BUILD_TYPE=Debug
-          -DDS_FOUND=ON
           -DPLUGIN_FIRMWAREUPDATE=ON
           -DRDK_SERVICES_L1_TEST=ON
           -DUSE_THUNDER_R4=ON

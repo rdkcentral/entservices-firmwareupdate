@@ -88,13 +88,6 @@ jobs:
 
       # dsTypes.h/dsVideoDevice.h HAL header contract
       # Using stable tag 6.0.1 to avoid breaking changes from main branch
-      - name: Checkout rdk-halif-device_settings
-        uses: actions/checkout@v3
-        with:
-          repository: rdkcentral/rdk-halif-device_settings
-          path: rdk-halif-device_settings
-          ref: 6.0.1
-
       - name: Checkout entservices-firmwareupdate
         if: ${{ inputs.caller_source == 'local' }}
         uses: actions/checkout@v3
@@ -115,7 +108,7 @@ jobs:
           repository: rdkcentral/entservices-testframework
           path: entservices-testframework
           ref: develop
-          
+
       - name: Checkout networkmanager
         uses: actions/checkout@v3
         with:
@@ -188,7 +181,8 @@ jobs:
           repository: rdkcentral/entservices-apis
           path: entservices-apis
           ref: ${{env.INTERFACES_REF}}
-          run: rm -rf $GITHUB_WORKSPACE/entservices-apis/jsonrpc/DTV.json
+      - name: Remove unused DTV API definition
+        run: rm -f "$GITHUB_WORKSPACE/entservices-apis/jsonrpc/DTV.json"
 
       - name: Apply patches entservices-apis
         run: |
@@ -217,7 +211,6 @@ jobs:
           &&
           mkdir -p
           headers
-          headers/rdk/ds
           headers/rdk/iarmbus
           headers/rdk/iarmmgrs-hal
           headers/systemservices
@@ -250,6 +243,7 @@ jobs:
           tvSettingsODM.h
           tvTypesODM.h
           tr181api.h
+          list.hpp
           &&
           cp -r /usr/include/gstreamer-1.0/gst /usr/include/glib-2.0/* /usr/lib/x86_64-linux-gnu/glib-2.0/include/* /usr/local/include/trower-base64/base64.h /usr/include/libdrm/drm.h /usr/include/libdrm/drm_mode.h /usr/include/xf86drm.h .
 
@@ -325,12 +319,6 @@ jobs:
           cmake --build build/entservices-helpers
           &&
           cmake --install build/entservices-helpers
-
-      - name: Copy DeviceSettings HAL headers
-        run: >
-          mkdir -p "$GITHUB_WORKSPACE/install/usr/include"
-          &&
-          cp -r "$GITHUB_WORKSPACE/rdk-halif-device_settings/include/." "$GITHUB_WORKSPACE/install/usr/include/"
 
       - name: Generate IARM headers
         run: |
@@ -411,7 +399,6 @@ jobs:
           -DPLUGIN_PERSISTENTSTORE_PATH="/tmp/secure/persistent/rdkservicestore"
           -DPLUGIN_PERSISTENTSTORE_LEGACYPATH="/tmp/persistent/rdkservicestore"
           -DCOMCAST_CONFIG=OFF
-          -DCMAKE_DISABLE_FIND_PACKAGE_DS=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_IARMBus=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_Udev=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RFC=ON
@@ -420,7 +407,6 @@ jobs:
           -DUSE_THUNDER_R4=ON
           -DPLUGIN_L2Tests=ON
           -DRDK_SERVICE_L2_TEST=ON
-          -DDS_FOUND=ON
           -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
           &&
           cmake --build build/entservices-firmwareupdate -j8
@@ -480,7 +466,6 @@ jobs:
           -DPLUGIN_PERSISTENTSTORE_PATH="/tmp/secure/persistent/rdkservicestore"
           -DPLUGIN_PERSISTENTSTORE_LEGACYPATH="/tmp/persistent/rdkservicestore"
           -DCOMCAST_CONFIG=OFF
-          -DCMAKE_DISABLE_FIND_PACKAGE_DS=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_IARMBus=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_Udev=ON
           -DCMAKE_DISABLE_FIND_PACKAGE_RFC=ON
@@ -489,7 +474,6 @@ jobs:
           -DUSE_THUNDER_R4=ON
           -DPLUGIN_L2Tests=ON
           -DRDK_SERVICE_L2_TEST=ON
-          -DDS_FOUND=ON
           -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
           &&
           cmake --build build/entservices-testframework -j8

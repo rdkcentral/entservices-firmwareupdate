@@ -29,6 +29,13 @@ find_package(${NAMESPACE}Definitions REQUIRED)
 find_package(CompileSettingsDebug CONFIG REQUIRED)
 find_package(${NAMESPACE}Helpers REQUIRED)
 
+if (NOT CMAKE_DISABLE_FIND_PACKAGE_IARMBus)
+    find_package(IARMBus)
+    if (NOT IARMBUS_FOUND)
+        message(FATAL_ERROR "IARMBus is required to build the FirmwareUpdate implementation")
+    endif()
+endif()
+
 add_library(${MODULE_NAME} SHARED
     FirmwareUpdate.cpp
     Module.cpp)
@@ -65,23 +72,16 @@ if (RDK_SERVICE_L2_TEST)
    endif (TESTMOCKLIB_LIBRARIES)
 endif (RDK_SERVICES_L2_TEST)
 
-find_package(DS)
-if (DS_FOUND)
-	find_package(IARMBus)
-    add_definitions(-DDS_FOUND)
-    target_include_directories(${PLUGIN_IMPLEMENTATION} PRIVATE ${IARMBUS_INCLUDE_DIRS})
-    target_include_directories(${PLUGIN_IMPLEMENTATION} PRIVATE ${DS_INCLUDE_DIRS})
-    target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE ${NAMESPACE}Plugins::${NAMESPACE}Plugins ${IARMBUS_LIBRARIES} ${DS_LIBRARIES})
-else (DS_FOUND)
-    target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE ${NAMESPACE}Plugins::${NAMESPACE}Plugins)
-endif(DS_FOUND)
-
-
 target_link_libraries(${PLUGIN_IMPLEMENTATION}
     PRIVATE
         CompileSettingsDebug::CompileSettingsDebug
         ${NAMESPACE}Plugins::${NAMESPACE}Plugins
         ${NAMESPACE}::${NAMESPACE}Helpers)
+
+if (IARMBUS_FOUND)
+    target_include_directories(${PLUGIN_IMPLEMENTATION} PRIVATE ${IARMBUS_INCLUDE_DIRS})
+    target_link_libraries(${PLUGIN_IMPLEMENTATION} PRIVATE ${IARMBUS_LIBRARIES})
+endif()
 
 install(TARGETS ${PLUGIN_IMPLEMENTATION}
     DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/${STORAGE_DIRECTORY}/plugins)
