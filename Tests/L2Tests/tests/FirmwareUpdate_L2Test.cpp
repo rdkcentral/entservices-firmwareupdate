@@ -25,6 +25,7 @@
 #include <condition_variable>
 #include <fstream>
 #include <iostream>
+#include <cstdlib>
 #include <interfaces/IFirmwareUpdate.h>
 #include "HdmiCec.h"
 
@@ -147,6 +148,48 @@ TEST_F(FirmwareUpdateTest,FirmwareFilepath_not_exist)
         status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
         EXPECT_NE(status,Core::ERROR_NONE);
     }    
+}
+
+TEST_F(FirmwareUpdateTest,FirmwareFilepath_is_directory)
+{
+    uint32_t status = Core::ERROR_GENERAL;
+    JsonObject params;
+    JsonObject result;
+
+    //rejects non-regular-file paths (fstat/S_ISREG check)
+    const char* dirPath = "/tmp/firmware_l2_test_directory";
+    system(("mkdir -p " + std::string(dirPath)).c_str());
+
+    params["firmwareFilepath"] = dirPath;
+    params["firmwareType"]     = "PCI";
+    status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
+
+    EXPECT_NE(status, Core::ERROR_NONE);
+
+    system(("rm -rf " + std::string(dirPath)).c_str());
+}
+
+TEST_F(FirmwareUpdateTest,FirmwareFilepath_OutsideTrustedRoot)
+{
+    uint32_t status = Core::ERROR_GENERAL;
+    JsonObject params;
+    JsonObject result;
+
+    //rejects a regular file located outside /tmp, /opt, /var/tmp
+    const char* filePath = "/dev/shm/firmware_l2_outside_root.bin";
+    std::ofstream file(filePath, std::ios::binary);
+
+    if (file.is_open()) {
+        file << "firmware content";
+        file.close();
+
+        params["firmwareFilepath"] = filePath;
+        params["firmwareType"]     = "PCI";
+        status = InvokeServiceMethod("org.rdk.FirmwareUpdate", "updateFirmware", params, result);
+        EXPECT_NE(status, Core::ERROR_NONE);
+    }
+
+    std::remove(filePath);
 }
 
 TEST_F(FirmwareUpdateTest,FirmwareUptoDateValidatation)
